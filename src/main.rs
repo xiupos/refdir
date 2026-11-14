@@ -1,5 +1,6 @@
 mod bibtex;
 mod citations;
+mod csl;
 mod schema;
 
 use anyhow::{Context, Result, bail};
@@ -13,6 +14,11 @@ use std::process::ExitCode;
 /// `println!`, which ends the program quietly when the reader has gone, as with `| head`
 macro_rules! out {
     ($($arg:tt)*) => { written(writeln!(std::io::stdout(), $($arg)*)) };
+}
+
+/// A warning on standard error
+macro_rules! warn {
+    ($($arg:tt)*) => { eprintln!("refdir: warning: {}", format_args!($($arg)*)) };
 }
 
 /// `print!`, the same
@@ -112,7 +118,7 @@ fn run(cli: Cli) -> Result<bool> {
         Library::read(&path).with_context(|| format!("cannot read the library {}", path.display()))?;
     if !matches!(cli.command, Command::Check) {
         for (dir, e) in &library.unreadable {
-            eprintln!("refdir: warning: skipped {}: {e}", dir.display());
+            warn!("skipped {}: {e}", dir.display());
         }
     }
     match cli.command {
@@ -128,29 +134,31 @@ fn run(cli: Cli) -> Result<bool> {
     }
 }
 
+// MARK: - ls, find
+
 fn has_tags(entry: &Entry, tags: &[String]) -> bool {
     let own = entry.tags();
     tags.iter().all(|t| own.contains(&t.as_str()))
 }
 
 fn list(library: &Library, args: &ListArgs, keep: impl Fn(&Entry) -> bool) -> Result<bool> {
-    let entries = library.entries.iter().filter(|e| has_tags(e, &args.tag) && keep(e));
-    for entry in entries {
-        let item = entry.resolved();
-        let id = entry.id().unwrap_or_default();
+    for entry in library.entries.iter().filter(|e| has_tags(e, &args.tag) && keep(e)) {
         if args.q {
-            if !id.is_empty() {
+            if let Some(id) = entry.id() {
                 out!("{id}");
             }
-        } else if args.json {
-            out!("{}", summary(entry, item));
-        } else {
-            let title = item.get("title").and_then(Value::as_str).unwrap_or_default();
-            let year = item.get("issued").map(year).unwrap_or_default();
-            // An entry without a key by its folder, in brackets, which a key cannot have
-            let id = if id.is_empty() { format!("[{}]", entry.name().to_string_lossy()) } else { id };
-            out!("{id}\t{}\t{year}\t{}", first_author(&item), one_line(title));
+            continue;
         }
+        let item = entry.resolved();
+        if args.json {
+            out!("{}", summary(entry, item));
+            continue;
+        }
+        // An entry without a key by its folder, in brackets, which a key cannot have
+        let id = entry.id().map_or_else(|| format!("[{}]", entry.name().to_string_lossy()), str::to_owned);
+        let year = csl::issued(&item).map(|(y, _)| y.to_string()).unwrap_or_default();
+        let title = csl::one_line(csl::str_field(&item, "title").unwrap_or_default());
+        out!("{id}\t{}\t{year}\t{title}", csl::first_author(&item));
     }
     Ok(true)
 }
@@ -167,35 +175,16 @@ fn summary(entry: &Entry, item: Map<String, Value>) -> Value {
     out
 }
 
-fn one_line(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
-/// The first author's family name, or the name as it is
-fn first_author(item: &Map<String, Value>) -> String {
-    let Some(first) = item.get("author").and_then(|a| a.get(0)) else { return String::new() };
-    let part = |key: &str| first.get(key).and_then(Value::as_str);
-    one_line(part("literal").or(part("family")).or(part("given")).unwrap_or_default())
-}
-
-/// The year of a CSL date: of its first `date-parts`, or the digits `raw` starts with
-fn year(date: &Value) -> String {
-    if let Some(year) = date.get("date-parts").and_then(|p| p.get(0)).and_then(|p| p.get(0)) {
-        return year.as_str().map_or_else(|| year.to_string(), str::to_owned);
-    }
-    let raw = date.get("raw").and_then(Value::as_str).unwrap_or_default().trim();
-    raw.chars().take_while(char::is_ascii_digit).collect()
-}
-
 /// Whether the resolved title, authors or key, or the note, contain `word`, in lower case
 fn matches(entry: &Entry, word: &str) -> bool {
-    let item = entry.resolved();
     let has = |text: &str| text.to_lowercase().contains(word);
-    let authors = item.get("author").and_then(Value::as_array).into_iter().flatten();
-    let names = authors.filter_map(Value::as_object).flat_map(|a| a.values().filter_map(Value::as_str));
-    let mut texts = ["title", "id"].into_iter().filter_map(|k| item.get(k).and_then(Value::as_str));
-    texts.any(has) || names.into_iter().any(has) || entry.note().is_some_and(has)
+    let field = |key| entry.field(key).and_then(Value::as_str);
+    let authors = entry.field("author").and_then(Value::as_array).into_iter().flatten();
+    let mut names = authors.filter_map(Value::as_object).flat_map(|a| a.values().filter_map(Value::as_str));
+    [field("title"), field("id"), entry.note()].into_iter().flatten().any(has) || names.any(has)
 }
+
+// MARK: - show, open
 
 /// The entries with the key. None is said on standard error
 fn find<'a>(library: &'a Library, key: &str) -> Vec<&'a Entry> {
@@ -203,16 +192,13 @@ fn find<'a>(library: &'a Library, key: &str) -> Vec<&'a Entry> {
     match found.len() {
         0 => eprintln!("refdir: no entry has the key {key}"),
         1 => {}
-        n => eprintln!("refdir: warning: {n} entries have the key {key}"),
+        n => warn!("{n} entries have the key {key}"),
     }
     found
 }
 
 fn show(library: &Library, key: &str) -> Result<bool> {
     let found = find(library, key);
-    if found.is_empty() {
-        return Ok(false);
-    }
     for (i, entry) in found.iter().enumerate() {
         if i > 0 {
             out!();
@@ -220,8 +206,8 @@ fn show(library: &Library, key: &str) -> Result<bool> {
         out!("{}", entry.id().unwrap_or_default());
         out!("folder:  {}", entry.dir.display());
         let files = entry.files().with_context(|| format!("cannot read {}", entry.dir.display()))?;
-        let files: Vec<String> = files.iter().map(|f| f.display().to_string()).collect();
         if !files.is_empty() {
+            let files: Vec<String> = files.iter().map(|f| f.display().to_string()).collect();
             out!("files:   {}", files.join(", "));
         }
         if let Some(main) = entry.main_file()? {
@@ -230,7 +216,7 @@ fn show(library: &Library, key: &str) -> Result<bool> {
         if !entry.tags().is_empty() {
             out!("tags:    {}", entry.tags().join(", "));
         }
-        for (name, source) in entry.data.get("sources").and_then(Value::as_object).into_iter().flatten() {
+        for (name, source) in entry.sources() {
             out!("source:  {name}{}", source_ids(source));
         }
         if let Some(note) = entry.note() {
@@ -241,7 +227,7 @@ fn show(library: &Library, key: &str) -> Result<bool> {
         let item = serde_json::to_string_pretty(&entry.resolved())?;
         item.lines().for_each(|l| out!("  {l}"));
     }
-    Ok(true)
+    Ok(!found.is_empty())
 }
 
 /// ` (csl.id X, recid N, arXiv A)` for a source
@@ -259,85 +245,33 @@ fn source_ids(source: &Value) -> String {
 }
 
 fn open(library: &Library, key: &str) -> Result<bool> {
-    let found = find(library, key);
-    if found.is_empty() {
-        return Ok(false);
-    }
-    if found.len() > 1 {
-        let dirs: Vec<String> = found.iter().map(|e| e.dir.display().to_string()).collect();
-        bail!("more than one entry has the key {key}: {}", dirs.join(", "));
-    }
-    let Some(main) = found[0].main_file()? else {
-        eprintln!("refdir: {} has no file", found[0].dir.display());
+    let entry = match find(library, key).as_slice() {
+        [] => return Ok(false),
+        [entry] => *entry,
+        found => {
+            let dirs: Vec<String> = found.iter().map(|e| e.dir.display().to_string()).collect();
+            bail!("more than one entry has the key {key}: {}", dirs.join(", "));
+        }
+    };
+    let Some(main) = entry.main_file()? else {
+        eprintln!("refdir: {} has no file", entry.dir.display());
         return Ok(false);
     };
     open::that_detached(&main).with_context(|| format!("cannot open {}", main.display()))?;
     Ok(true)
 }
 
-fn bib(library: &Library, aux: Option<&Path>, tags: &[String], format: Format) -> Result<bool> {
-    let mut ok = true;
-    // The entries, each with the key it is cited by
-    let mut entries: Vec<(String, &Entry)> = Vec::new();
-    // Says whether the key is new
-    fn add<'a>(entries: &mut Vec<(String, &'a Entry)>, key: String, entry: &'a Entry) -> bool {
-        if entries.iter().any(|(k, _)| refdir::same_id(k, &key)) {
-            return entries.iter().any(|(_, e)| e.dir == entry.dir);
-        }
-        entries.push((key, entry));
-        true
-    }
-    let citations = aux.map(citations::read).transpose()?;
-    if citations.as_ref().is_none_or(|c| c.all) {
-        let tagged = library.entries.iter().filter(|e| has_tags(e, tags));
-        for entry in tagged {
-            match entry.id() {
-                Some(id) if !add(&mut entries, id.clone(), entry) => {
-                    eprintln!(
-                        "refdir: warning: skipped {}: another entry has the key {id}",
-                        entry.dir.display()
-                    );
-                    ok = false;
-                }
-                Some(_) => {}
-                None => eprintln!("refdir: warning: skipped {}: it has no key", entry.dir.display()),
-            }
-        }
-    }
-    for key in citations.iter().flat_map(|c| &c.keys) {
-        match library.find(key).as_slice() {
-            [] => {
-                eprintln!("refdir: warning: no entry has the key {key}");
-                ok = false;
-            }
-            [entry] => drop(add(&mut entries, key.clone(), entry)),
-            found => {
-                eprintln!("refdir: warning: {} entries have the key {key}; the first is used", found.len());
-                ok = false;
-                add(&mut entries, key.clone(), found[0]);
-            }
-        }
-    }
+// MARK: - bib
 
+/// An entry to write, by the key it is cited by
+type Cited<'a> = (String, &'a Entry);
+
+fn bib(library: &Library, aux: Option<&Path>, tags: &[String], format: Format) -> Result<bool> {
+    let (cited, ok) = select(library, aux, tags)?;
     match format {
-        Format::Bibtex => {
-            let mut out = Vec::new();
-            for (key, entry) in &entries {
-                if !key.chars().all(|c| c.is_ascii_alphanumeric() || "_:-".contains(c)) {
-                    eprintln!(
-                        "refdir: warning: skipped {}: the key {key:?} cannot be BibTeX's",
-                        entry.dir.display()
-                    );
-                    ok = false;
-                    continue;
-                }
-                let arxiv = entry.data.get("sources").and_then(|s| s["inspire"]["arxiv"].as_str());
-                out.push(bibtex::entry(key, &entry.resolved(), arxiv));
-            }
-            out_raw!("{}", out.join("\n"));
-        }
+        Format::Bibtex => Ok(write_bibtex(&cited) && ok),
         Format::CslJson => {
-            let items: Vec<Value> = entries
+            let items: Vec<Value> = cited
                 .iter()
                 .map(|(key, entry)| {
                     let mut item = entry.resolved();
@@ -346,10 +280,70 @@ fn bib(library: &Library, aux: Option<&Path>, tags: &[String], format: Format) -
                 })
                 .collect();
             out!("{}", serde_json::to_string_pretty(&items)?);
+            Ok(ok)
         }
     }
-    Ok(ok)
 }
+
+/// The entries cited in the `.aux` file, or with the tags. Says whether each key named one entry
+fn select<'a>(library: &'a Library, aux: Option<&Path>, tags: &[String]) -> Result<(Vec<Cited<'a>>, bool)> {
+    let mut ok = true;
+    let mut cited: Vec<Cited> = Vec::new();
+    let taken =
+        |cited: &[Cited<'a>], key: &str| cited.iter().find(|(k, _)| refdir::same_id(k, key)).map(|c| c.1);
+
+    let citations = aux.map(citations::read).transpose()?;
+    if citations.as_ref().is_none_or(|c| c.all) {
+        for entry in library.entries.iter().filter(|e| has_tags(e, tags)) {
+            let Some(id) = entry.id() else {
+                warn!("skipped {}: it has no key", entry.dir.display());
+                continue;
+            };
+            match taken(&cited, id) {
+                None => cited.push((id.to_owned(), entry)),
+                Some(other) if other.dir != entry.dir => {
+                    warn!("skipped {}: another entry has the key {id}", entry.dir.display());
+                    ok = false;
+                }
+                Some(_) => {}
+            }
+        }
+    }
+    for key in citations.iter().flat_map(|c| &c.keys) {
+        let found = library.find(key);
+        let Some(&entry) = found.first() else {
+            warn!("no entry has the key {key}");
+            ok = false;
+            continue;
+        };
+        if found.len() > 1 {
+            warn!("{} entries have the key {key}; the first is used", found.len());
+            ok = false;
+        }
+        if taken(&cited, key).is_none() {
+            cited.push((key.clone(), entry));
+        }
+    }
+    Ok((cited, ok))
+}
+
+/// Says whether all the keys could be BibTeX's
+fn write_bibtex(cited: &[Cited]) -> bool {
+    let mut ok = true;
+    let mut out = Vec::new();
+    for (key, entry) in cited {
+        if !key.chars().all(|c| c.is_ascii_alphanumeric() || "_:-".contains(c)) {
+            warn!("skipped {}: the key {key:?} cannot be BibTeX's", entry.dir.display());
+            ok = false;
+            continue;
+        }
+        out.push(bibtex::entry(key, &entry.resolved(), entry.inspire_arxiv()));
+    }
+    out_raw!("{}", out.join("\n"));
+    ok
+}
+
+// MARK: - check
 
 /// A folder's name, as `check` says it
 fn folder(dir: &Path) -> String {
@@ -378,25 +372,18 @@ fn check(library: &Library) -> Result<bool> {
             error(format!("{}: {e}", folder(&entry.dir)));
         }
     }
-    let dirs = |entries: &[&Entry]| entries.iter().map(|e| folder(&e.dir)).collect::<Vec<_>>();
+    let dirs = |entries: &[&Entry]| entries.iter().map(|e| folder(&e.dir)).collect::<Vec<_>>().join(", ");
     for (_, entries) in library.duplicate_ids() {
         let id = entries[0].id().unwrap_or_default();
-        error(format!("{} entries have the key {id}: {}", entries.len(), dirs(&entries).join(", ")));
+        error(format!("{} entries have the key {id}: {}", entries.len(), dirs(&entries)));
     }
     for (recid, entries) in library.duplicate_recids() {
-        error(format!(
-            "{} entries have INSPIRE record {recid}: {}",
-            entries.len(),
-            dirs(&entries).join(", ")
-        ));
+        error(format!("{} entries have INSPIRE record {recid}: {}", entries.len(), dirs(&entries)));
     }
     for entry in library.entries.iter().filter(|e| !e.name_matches_id()) {
         let id = entry.id().unwrap_or_default();
-        out!(
-            "warning: {}: the folder name is not {} for the key {id}",
-            folder(&entry.dir),
-            refdir::folder_name(&id)
-        );
+        let expected = refdir::folder_name(id);
+        out!("warning: {}: the folder name is not {expected} for the key {id}", folder(&entry.dir));
         warnings += 1;
     }
     eprintln!("{} entries: {errors} errors, {warnings} warnings", library.entries.len());

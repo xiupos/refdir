@@ -113,6 +113,18 @@ fn sources_are_layered_in_key_order_in_the_file() {
 }
 
 #[test]
+fn a_resolved_field_is_the_same_as_in_the_resolved_item() {
+    let layered = json!({ "v": 1, "sources": { "b": { "csl": { "id": "b", "title": "B" } }, "a": { "csl": { "id": "a" } } } });
+    for example in examples().into_iter().chain([layered]) {
+        let data = object(example);
+        for (key, value) in &resolve(&data) {
+            assert_eq!(resolved_field(&data, key), Some(value));
+        }
+        assert_eq!(resolved_field(&data, "no-such-field"), None);
+    }
+}
+
+#[test]
 fn layers_that_are_not_objects_are_left_out() {
     let data = object(json!({ "v": 1, "sources": { "x": { "csl": "no" }, "y": 3 }, "csl": [] }));
     assert!(resolve(&data).is_empty());

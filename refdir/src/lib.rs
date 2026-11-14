@@ -90,16 +90,30 @@ pub fn read_entry(dir: &Path) -> Result<Map<String, Value>, Error> {
     }
 }
 
-/// The resolved item: each `sources.*.csl` in key order, then `csl`. A later field replaces an
-/// earlier one whole. Layers that are not objects are left out
+/// `sources`, by name, in the order of the keys in the file
+pub fn sources(data: &Map<String, Value>) -> impl DoubleEndedIterator<Item = (&String, &Value)> {
+    data.get("sources").and_then(Value::as_object).into_iter().flatten()
+}
+
+/// The layers of the resolved item, earliest first: each `sources.*.csl` in key order, then `csl`.
+/// Those that are not objects are left out
+fn layers(data: &Map<String, Value>) -> impl DoubleEndedIterator<Item = &Map<String, Value>> {
+    let sources = sources(data).filter_map(|(_, s)| s.get("csl"));
+    sources.chain(data.get("csl")).filter_map(Value::as_object)
+}
+
+/// The resolved item: a later layer's field replaces an earlier one whole
 pub fn resolve(data: &Map<String, Value>) -> Map<String, Value> {
-    let sources = data.get("sources").and_then(Value::as_object).into_iter().flat_map(Map::values);
-    let layers = sources.filter_map(|s| s.get("csl")).chain(data.get("csl"));
     let mut item = Map::new();
-    for layer in layers.filter_map(Value::as_object) {
+    for layer in layers(data) {
         item.extend(layer.clone());
     }
     item
+}
+
+/// A field of the resolved item, without resolving the rest
+pub fn resolved_field<'a>(data: &'a Map<String, Value>, key: &str) -> Option<&'a Value> {
+    layers(data).rev().find_map(|layer| layer.get(key))
 }
 
 /// A readable entry
@@ -119,9 +133,14 @@ impl Entry {
         resolve(&self.data)
     }
 
+    /// A field of the resolved item
+    pub fn field(&self, key: &str) -> Option<&Value> {
+        resolved_field(&self.data, key)
+    }
+
     /// The citation key: the resolved `csl.id`, if it is a string
-    pub fn id(&self) -> Option<String> {
-        self.resolved().get("id").and_then(Value::as_str).map(str::to_owned)
+    pub fn id(&self) -> Option<&str> {
+        self.field("id")?.as_str()
     }
 
     /// `tags`, without those that are not strings
@@ -134,9 +153,22 @@ impl Entry {
         self.data.get("note").and_then(Value::as_str)
     }
 
+    pub fn sources(&self) -> impl DoubleEndedIterator<Item = (&String, &Value)> {
+        sources(&self.data)
+    }
+
+    fn inspire(&self) -> Option<&Value> {
+        self.data.get("sources")?.get("inspire")
+    }
+
     /// `sources.inspire.recid`
     pub fn inspire_recid(&self) -> Option<u64> {
-        self.data.get("sources")?.get("inspire")?.get("recid")?.as_u64()
+        self.inspire()?.get("recid")?.as_u64()
+    }
+
+    /// `sources.inspire.arxiv`
+    pub fn inspire_arxiv(&self) -> Option<&str> {
+        self.inspire()?.get("arxiv")?.as_str()
     }
 
     /// The folder's name
@@ -172,7 +204,7 @@ impl Entry {
     /// with `-2`, `-3`, …. Without a key, it is
     pub fn name_matches_id(&self) -> bool {
         let Some(id) = self.id() else { return true };
-        let base = folder_name(&id);
+        let base = folder_name(id);
         let name = self.name().to_string_lossy();
         let Some(rest) = name.strip_prefix(base.as_str()) else { return false };
         let number = rest.strip_prefix('-').filter(|n| !n.starts_with('0'));
@@ -222,7 +254,7 @@ impl Library {
 
     /// The entries with a citation key, ignoring case. More than one is a conflict
     pub fn find(&self, id: &str) -> Vec<&Entry> {
-        self.entries.iter().filter(|e| e.id().is_some_and(|i| same_id(&i, id))).collect()
+        self.entries.iter().filter(|e| e.id().is_some_and(|i| same_id(i, id))).collect()
     }
 
     /// The entries that share a citation key, ignoring case, by key in lower case

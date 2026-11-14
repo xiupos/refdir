@@ -3,6 +3,7 @@
 //! Written here and not with the `biblatex` crate: its writer turns `\` into `\\` (a line break),
 //! `~` and `^` into accents and `{` into an unbalanced `\{`, which BibTeX counts as a brace.
 
+use crate::csl::{self, str_field, text_field};
 use serde_json::{Map, Value};
 
 const MONTHS: [&str; 12] =
@@ -10,57 +11,53 @@ const MONTHS: [&str; 12] =
 
 /// The BibTeX entry of a resolved item. `arxiv` is `sources.inspire.arxiv`
 pub fn entry(key: &str, item: &Map<String, Value>, arxiv: Option<&str>) -> String {
-    let str_field = |name: &str| item.get(name).and_then(Value::as_str).filter(|s| !s.is_empty());
-    let kind = entry_type(str_field("type").unwrap_or(""));
+    let kind = entry_type(str_field(item, "type").unwrap_or_default());
+    // Each value with its delimiters
     let mut fields: Vec<(&str, String)> = Vec::new();
-    for (csl, bib) in [("author", "author"), ("editor", "editor")] {
-        if let Some(names) =
-            item.get(csl).and_then(Value::as_array).map(|n| names(n)).filter(|n| !n.is_empty())
-        {
-            fields.push((bib, names));
+    for role in ["author", "editor"] {
+        let names = item.get(role).and_then(Value::as_array).map(|n| names(n));
+        if let Some(names) = names.filter(|n| !n.is_empty()) {
+            fields.push((role, braced(&names)));
         }
     }
-    if let Some(title) = str_field("title") {
-        // Braced again so that the style keeps its case
-        fields.push(("title", format!("{{{}}}", escape(title))));
+    if let Some(title) = str_field(item, "title") {
+        // Braced twice, so that the style keeps its case
+        fields.push(("title", braced(&braced(&escape(title)))));
     }
-    if let Some(container) = str_field("container-title") {
+    if let Some(container) = str_field(item, "container-title") {
         let name = if matches!(kind, "incollection" | "inproceedings") { "booktitle" } else { "journal" };
-        fields.push((name, escape(container)));
+        fields.push((name, braced(&escape(container))));
     }
-    if let Some(volume) = text(item.get("volume")) {
-        fields.push(("volume", escape(&volume)));
+    if let Some(volume) = text_field(item, "volume") {
+        fields.push(("volume", braced(&escape(&volume))));
     }
-    if let Some(page) = text(item.get("page")) {
-        fields.push(("pages", escape(&page_range(&page))));
+    if let Some(page) = text_field(item, "page") {
+        fields.push(("pages", braced(&escape(&page_range(&page)))));
     }
-    if let Some((year, month)) = item.get("issued").and_then(year_month) {
-        fields.push(("year", year.to_string()));
+    if let Some((year, month)) = csl::issued(item) {
+        fields.push(("year", braced(&year.to_string())));
         if let Some(m) = month {
             // A macro, not braced
             fields.push(("month", MONTHS[m as usize - 1].to_owned()));
         }
     }
-    if let Some(doi) = str_field("DOI") {
-        fields.push(("doi", verbatim(doi)));
+    if let Some(doi) = str_field(item, "DOI") {
+        fields.push(("doi", braced(&verbatim(doi))));
     }
-    if let Some(url) = str_field("URL") {
-        fields.push(("url", verbatim(url)));
+    if let Some(url) = str_field(item, "URL") {
+        fields.push(("url", braced(&verbatim(url))));
     }
     if let Some(arxiv) = arxiv {
-        fields.push(("eprint", verbatim(arxiv)));
-        fields.push(("archivePrefix", "arXiv".to_owned()));
+        fields.push(("eprint", braced(&verbatim(arxiv))));
+        fields.push(("archivePrefix", braced("arXiv")));
     }
 
-    let mut out = format!("@{kind}{{{key},\n");
-    for (name, value) in fields {
-        if name == "month" {
-            out += &format!("    {name} = {value},\n");
-        } else {
-            out += &format!("    {name} = {{{value}}},\n");
-        }
-    }
-    out + "}\n"
+    let fields: String = fields.iter().map(|(name, value)| format!("    {name} = {value},\n")).collect();
+    format!("@{kind}{{{key},\n{fields}}}\n")
+}
+
+fn braced(text: &str) -> String {
+    format!("{{{text}}}")
 }
 
 /// The BibTeX entry type of a CSL item type
@@ -105,15 +102,6 @@ fn verbatim(text: &str) -> String {
     text.replace('{', "%7B").replace('}', "%7D")
 }
 
-/// A string or a number
-fn text(value: Option<&Value>) -> Option<String> {
-    match value? {
-        Value::String(s) if !s.is_empty() => Some(s.clone()),
-        Value::Number(n) => Some(n.to_string()),
-        _ => None,
-    }
-}
-
 /// `231-252` → `231--252`
 fn page_range(page: &str) -> String {
     let mut out = String::new();
@@ -141,7 +129,7 @@ fn names(names: &[Value]) -> String {
 fn name(name: &Value) -> Option<String> {
     let part = |key: &str| name.get(key).and_then(Value::as_str).filter(|s| !s.is_empty()).map(protect);
     if let Some(literal) = name.get("literal").and_then(Value::as_str).filter(|s| !s.is_empty()) {
-        return Some(format!("{{{}}}", escape(literal)));
+        return Some(braced(&escape(literal)));
     }
     let particles = [part("dropping-particle"), part("non-dropping-particle")];
     let von: Vec<String> = particles.into_iter().flatten().collect();
@@ -149,7 +137,7 @@ fn name(name: &Value) -> Option<String> {
     let (given, suffix) = (part("given"), part("suffix"));
     match (last.is_empty(), given, suffix) {
         (true, None, _) => None,
-        (true, Some(given), _) => Some(format!("{{{given}}}")),
+        (true, Some(given), _) => Some(braced(&given)),
         (false, None, None) => Some(last),
         (false, given, Some(suffix)) => Some(format!("{last}, {suffix}, {}", given.unwrap_or_default())),
         (false, Some(given), None) => Some(format!("{last}, {given}")),
@@ -160,29 +148,10 @@ fn name(name: &Value) -> Option<String> {
 fn protect(part: &str) -> String {
     let escaped = escape(part);
     if part.contains(',') || part.split_whitespace().any(|w| w.eq_ignore_ascii_case("and")) {
-        format!("{{{escaped}}}")
+        braced(&escaped)
     } else {
         escaped
     }
-}
-
-/// The year and month of a CSL date: its first `date-parts`, or else its `raw` (`1997-11`)
-fn year_month(date: &Value) -> Option<(i64, Option<u32>)> {
-    let number = |v: &Value| v.as_i64().or_else(|| v.as_str()?.trim().parse().ok());
-    if let Some(parts) = date.get("date-parts").and_then(|p| p.get(0)).and_then(Value::as_array) {
-        let year = number(parts.first()?)?;
-        let month = parts.get(1).and_then(number).and_then(month);
-        return Some((year, month));
-    }
-    let raw = date.get("raw")?.as_str()?.trim();
-    let mut parts = raw.split('-');
-    let year = parts.next().filter(|y| y.len() == 4)?.parse().ok()?;
-    let month = parts.next().and_then(|m| m.parse().ok()).and_then(month);
-    Some((year, month))
-}
-
-fn month(m: i64) -> Option<u32> {
-    (1..=12).contains(&m).then_some(m as u32)
 }
 
 #[cfg(test)]
@@ -226,17 +195,6 @@ mod tests {
             "{Smith and Sons} and {Plato}"
         );
         assert_eq!(names(json!([{ "literal": "R&D Team" }, {}])), r"{R\&D Team}");
-    }
-
-    #[test]
-    fn dates() {
-        assert_eq!(year_month(&json!({ "raw": "1997-11" })), Some((1997, Some(11))));
-        assert_eq!(year_month(&json!({ "raw": "2012-07-04" })), Some((2012, Some(7))));
-        assert_eq!(year_month(&json!({ "raw": "1997" })), Some((1997, None)));
-        assert_eq!(year_month(&json!({ "date-parts": [[1971]] })), Some((1971, None)));
-        assert_eq!(year_month(&json!({ "date-parts": [["1801", "13"]] })), Some((1801, None)));
-        assert_eq!(year_month(&json!({ "date-parts": [[2001, 2, 3], [2002]] })), Some((2001, Some(2))));
-        assert_eq!(year_month(&json!({ "raw": "Nov 1997" })), None);
     }
 
     #[test]
