@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "refdir v1",
-  "description": "A library subfolder containing 'entry.json' (this file) is one reference; its other files belong to it, except names starting with '.'. Folder name: resolved 'csl.id' with ':' -> '-', unique ignoring case. Omit empty fields; keep unknown keys; write via a temp file. Fetching apps write only 'sources.<app>'; the library app and the user write 'csl', 'tags', 'note', 'files'. Put other app keys under the app's name.",
+  "description": "A folder directly inside the library containing 'entry.json' (this file) is one reference; its other files belong to it, except names starting with '.'. Other things in the library are ignored; names starting with '.' are for apps. Folder name: resolved 'csl.id' with ':' -> '-', unique ignoring case; only a hint. Omit empty fields; keep unknown keys; write via a temp file. The app creating the entry writes 'v' and 'added'; then fetching apps write only 'sources.<app>', and the library app and the user write 'csl', 'tags', 'note', 'files'. Put other app keys under the app's name.",
   "type": "object",
   "required": ["v"],
   "properties": {
@@ -12,7 +12,7 @@
     },
     "csl": {
       "allOf": [{ "$ref": "#/definitions/item" }],
-      "description": "The user's CSL-JSON item. Resolved item: each 'sources.*.csl' in key order, then 'csl'; a later field replaces an earlier one whole (e.g. 'author'). 'id' is the citation key."
+      "description": "The user's CSL-JSON item. Resolved item: each 'sources.*.csl' in key order, then 'csl'; a later field replaces an earlier one whole (e.g. 'author'). 'id' is the citation key. Text fields are plain text (no TeX)."
     },
     "sources": {
       "type": "object",
@@ -113,6 +113,7 @@
           },
           "fetched": "2026-11-14T10:02:00+09:00",
           "recid": 451647,
+          "title": "The Large $N$ limit of superconformal field theories and supergravity",
           "arxiv": "hep-th/9711200"
         }
       },
@@ -142,6 +143,7 @@
           },
           "fetched": "2026-11-14T10:02:00+09:00",
           "recid": 451647,
+          "title": "The Large $N$ limit of superconformal field theories and supergravity",
           "arxiv": "hep-th/9711200"
         }
       },
@@ -149,6 +151,46 @@
       "note": "§3 の相関関数の議論を読み直す",
       "added": "2026-11-14T10:02:00+09:00",
       "files": [{ "path": "hep-th-9711200.pdf" }]
+    },
+    {
+      "v": 1,
+      "sources": {
+        "inspire": {
+          "csl": {
+            "id": "Aad:2012tfa",
+            "type": "article-journal",
+            "title": "Observation of a new particle in the search for the Standard Model Higgs boson with the ATLAS detector at the LHC",
+            "author": [{ "literal": "ATLAS Collaboration" }],
+            "container-title": "Phys. Lett. B",
+            "volume": "716",
+            "page": "1-29",
+            "issued": { "raw": "2012-07" },
+            "DOI": "10.1016/j.physletb.2012.08.020"
+          },
+          "fetched": "2026-11-14T11:30:00+09:00",
+          "recid": 1124337,
+          "arxiv": "1207.7214"
+        }
+      },
+      "added": "2026-11-14T11:30:00+09:00"
+    },
+    {
+      "v": 1,
+      "sources": {
+        "inspire": {
+          "csl": {
+            "id": "inspire:2990001",
+            "type": "article",
+            "title": "An example paper without a texkey",
+            "author": [{ "family": "Example", "given": "Alex" }],
+            "issued": { "raw": "2026-11" }
+          },
+          "fetched": "2026-11-14T12:00:00+09:00",
+          "recid": 2990001,
+          "arxiv": "2611.01234"
+        }
+      },
+      "added": "2026-11-14T12:00:00+09:00"
     },
     {
       "v": 1,
