@@ -11,10 +11,8 @@ refdir: a folder format for reference libraries, and its implementation. These n
 | Path | Contents |
 |---|---|
 | `schema/v1.json` | The standard |
-| `refdir/` | The `refdir` lib crate (`src/tags.rs`: tags). Tests in `refdir/tests/rules.rs`, one or more per rule |
+| `refdir/` | The `refdir` lib crate (`src/tags.rs`: tags; `src/csl.rs`: reading CSL-JSON fields, dates, first author; `src/bibtex.rs`: CSL → BibTeX). Tests in `refdir/tests/rules.rs`, one or more per rule; `csl` and `bibtex` keep their unit tests next to their private helpers |
 | `src/main.rs` | The `refdir` command (package `refdir-cli`) |
-| `src/csl.rs` | Reading CSL-JSON fields (dates, first author) |
-| `src/bibtex.rs` | CSL → BibTeX |
 | `src/citations.rs` | Citation keys from a `.aux` file |
 | `src/schema.rs` | `check`'s JSON Schema validation |
 | `tests/cli.rs` | The commands, on a library built from `v1.json`'s examples |
@@ -24,7 +22,7 @@ Check with `cargo fmt`, `cargo clippy --all-targets` and `cargo test` (which run
 
 ## The lib crate
 
-- **heplio-gtk (`~/Projects/heplio-gtk`) depends on it** through git, and its `Cargo.lock` pins a commit: a change reaches it after `cargo update -p refdir` there. heplio-gtk is a fetching app that also writes `tags`.
+- **heplio-gtk (`~/Projects/heplio-gtk`) depends on it** through git, and its `Cargo.lock` pins a commit: a change reaches it after `cargo update -p refdir` there. heplio-gtk is a fetching app and a library app: it writes `csl`, `tags`, and `note`, and copies BibTeX made by `bibtex`, which the CLI's `bib` makes too, so that both write the same `.bib`.
 - **Only serde_json.** No CLI crates (clap, jsonschema, …). The API takes and returns `serde_json::Map` / `Value`; each app converts them to its own types.
 - **`preserve_order` is required**: the resolved item layers `sources` in the order of their keys in the file. The lib turns it on itself.
 - **`Error::NotV1` keeps `v`**, so that `check` can tell a later version (a warning: readers skip it) from a broken entry. `v` is compared as a number, so `1.0` is 1, as the schema's `const` has it.
@@ -60,12 +58,12 @@ The standard asks only for distinct non-empty strings. The rest is shared by hep
 
 ## BibTeX
 
-- **Our own writer, not the `biblatex` crate** (0.12): see `src/bibtex.rs`. Its fields are also a BTreeMap, so they come out in alphabetical order.
+- **Our own writer, not the `biblatex` crate** (0.12): see `refdir/src/bibtex.rs`. That crate's fields are also a BTreeMap, so they come out in alphabetical order. The writer is in the lib, so that heplio-gtk writes what `bib` writes.
 - **Escaping**: `& % $ # _` get a backslash; `{ } \ ~ ^` become `\textbraceleft{}` and the like, which keep braces balanced. Titles are braced twice, to keep their case. DOI, URL and eprint are not escaped: styles and biblatex print them verbatim, and `\_` would end up in the link. Only their braces are percent-encoded.
 - **Names**: `particle family, suffix, given`. A literal name, or a part containing a comma or an `and`, is braced.
 - **Types**: CSL `article` (a preprint) maps to `@article`, as INSPIRE does. `container-title` goes to `booktitle` for chapters and conference papers, and to `journal` otherwise.
 - **Fields written**: authors, editors, title, container, volume, pages, year, month (a macro: `nov`), DOI, URL, and eprint with `archivePrefix = {arXiv}` from `sources.inspire.arxiv`. Not yet `publisher`, `edition` and the like.
-- **Keys**: a key outside `[A-Za-z0-9_:-]` would break the `.bib`, so that entry is skipped.
+- **Keys**: a key outside `[A-Za-z0-9_:-]` would break the `.bib`, so that entry is skipped (`bibtex::is_key`).
 - **Tests**: the exact output for the Maldacena, ATLAS:2012yve and inspire:2990001 examples is in `tests/cli.rs`. Update those strings only on purpose.
 
 ## `.aux` files

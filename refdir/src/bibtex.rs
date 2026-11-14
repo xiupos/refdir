@@ -9,7 +9,14 @@ use serde_json::{Map, Value};
 const MONTHS: [&str; 12] =
     ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
 
-/// The BibTeX entry of a resolved item. `arxiv` is `sources.inspire.arxiv`
+/// Whether BibTeX can have `key`: only `A–Z a–z 0–9 _ : -`, and not empty. Another character would
+/// break the `.bib`
+pub fn is_key(key: &str) -> bool {
+    !key.is_empty() && key.chars().all(|c| c.is_ascii_alphanumeric() || "_:-".contains(c))
+}
+
+/// The BibTeX entry of a resolved item, ending with a line break. `arxiv` is
+/// `sources.inspire.arxiv`. The key is not checked: see [`is_key`]
 pub fn entry(key: &str, item: &Map<String, Value>, arxiv: Option<&str>) -> String {
     let kind = entry_type(str_field(item, "type").unwrap_or_default());
     // Each value with its delimiters
@@ -195,6 +202,12 @@ mod tests {
             "{Smith and Sons} and {Plato}"
         );
         assert_eq!(names(json!([{ "literal": "R&D Team" }, {}])), r"{R\&D Team}");
+    }
+
+    #[test]
+    fn keys() {
+        assert!(is_key("Maldacena:1997re") && is_key("inspire:1") && is_key("a_b-C"));
+        assert!(!is_key("") && !is_key("Gürsey 1964") && !is_key("a{b}") && !is_key("a,b"));
     }
 
     #[test]

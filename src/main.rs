@@ -1,11 +1,9 @@
-mod bibtex;
 mod citations;
-mod csl;
 mod schema;
 
 use anyhow::{Context, Result, bail};
 use clap::{ArgGroup, Parser, Subcommand, ValueEnum};
-use refdir::{Entry, Library};
+use refdir::{Entry, Library, bibtex, csl};
 use serde_json::{Map, Value, json};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -398,7 +396,7 @@ fn write_bibtex(cited: &[Cited]) -> bool {
     let mut ok = true;
     let mut out = Vec::new();
     for (key, entry) in cited {
-        if !key.chars().all(|c| c.is_ascii_alphanumeric() || "_:-".contains(c)) {
+        if !bibtex::is_key(key) {
             warn!("skipped {}: the key {key:?} cannot be BibTeX's", entry.dir.display());
             ok = false;
             continue;

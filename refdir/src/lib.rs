@@ -12,6 +12,8 @@ use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::{fmt, fs, io};
 
+pub mod bibtex;
+pub mod csl;
 pub mod tags;
 
 /// The file that makes a folder an entry
