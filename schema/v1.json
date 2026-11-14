@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "refdir v1",
-  "description": "A folder directly inside the library containing 'entry.json' (this file) is one reference; its other files belong to it, except names starting with '.'. Other things in the library are ignored; names starting with '.' are for apps. Folder name: resolved 'csl.id' with ':' -> '-', unique ignoring case; only a hint. Omit empty fields; keep unknown keys; write via a temp file. The app creating the entry writes 'v' and 'added'; then fetching apps write only 'sources.<app>', and the library app and the user write 'csl', 'tags', 'note', 'files'. Put other app keys under the app's name.",
+  "description": "A folder directly inside the library containing 'entry.json' (this file) is one reference; its other files belong to it, except names starting with '.', and the first by name is the main file. Other things in the library are ignored; names starting with '.' are for apps. Folder name: resolved 'csl.id' with ':' -> '-', unique ignoring case; only a hint. Omit empty fields; keep unknown keys; write via a temp file. The app creating the entry writes 'v' and 'added'; then fetching apps write only 'sources.<app>', and the library app and the user write 'csl', 'tags', 'note'. Put other app keys under the app's name.",
   "type": "object",
   "required": ["v"],
   "properties": {
@@ -50,23 +50,6 @@
       "type": "string",
       "format": "date-time",
       "description": "ISO 8601."
-    },
-    "files": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "required": ["path"],
-        "properties": {
-          "path": {
-            "type": "string",
-            "minLength": 1,
-            "pattern": "^(?![/\\\\]|[A-Za-z]:)(?!(.*[/\\\\])?\\.\\.([/\\\\]|$))",
-            "description": "Relative; no '..'."
-          },
-          "label": { "type": "string" }
-        }
-      },
-      "description": "Order and labels only; unlisted files follow by name, missing ones are ignored. The first is the main file."
     }
   },
   "additionalProperties": true,
@@ -117,8 +100,7 @@
           "arxiv": "hep-th/9711200"
         }
       },
-      "added": "2026-11-14T10:02:00+09:00",
-      "files": [{ "path": "hep-th-9711200.pdf" }]
+      "added": "2026-11-14T10:02:00+09:00"
     },
     {
       "v": 1,
@@ -149,8 +131,7 @@
       },
       "tags": ["status:read", "topic:AdS/CFT"],
       "note": "§3 の相関関数の議論を読み直す",
-      "added": "2026-11-14T10:02:00+09:00",
-      "files": [{ "path": "hep-th-9711200.pdf" }]
+      "added": "2026-11-14T10:02:00+09:00"
     },
     {
       "v": 1,
@@ -205,11 +186,7 @@
         "language": "ja"
       },
       "tags": ["status:reading", "topic:number-theory"],
-      "added": "2026-10-03T21:15:00+09:00",
-      "files": [
-        { "path": "scan.pdf", "label": "本文" },
-        { "path": "errata.pdf", "label": "正誤表" }
-      ]
+      "added": "2026-10-03T21:15:00+09:00"
     },
     {
       "v": 1,
