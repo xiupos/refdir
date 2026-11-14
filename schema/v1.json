@@ -1,0 +1,209 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "refdir v1",
+  "description": "A library subfolder containing 'entry.json' (this file) is one reference; its other files belong to it, except names starting with '.'. Folder name: resolved 'csl.id' with ':' -> '-', unique ignoring case. Omit empty fields; keep unknown keys; write via a temp file. Fetching apps write only 'sources.<app>'; the library app and the user write 'csl', 'tags', 'note', 'files'. Put other app keys under the app's name.",
+  "type": "object",
+  "required": ["v"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "v": {
+      "const": 1,
+      "description": "Spec version."
+    },
+    "csl": {
+      "allOf": [{ "$ref": "#/definitions/item" }],
+      "description": "The user's CSL-JSON item. Resolved item: each 'sources.*.csl' in key order, then 'csl'; a later field replaces an earlier one whole (e.g. 'author'). 'id' is the citation key."
+    },
+    "sources": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/definitions/source" },
+      "properties": {
+        "inspire": {
+          "allOf": [
+            { "$ref": "#/definitions/source" },
+            {
+              "properties": {
+                "recid": { "type": "integer", "minimum": 1 },
+                "arxiv": {
+                  "type": "string",
+                  "pattern": "^([0-9]{4}\\.[0-9]{4,5}|[a-z-]+(\\.[A-Z]{2})?/[0-9]{7})(v[0-9]+)?$",
+                  "description": "Without 'arXiv:'."
+                }
+              }
+            }
+          ]
+        }
+      },
+      "description": "Name -> fetched data. Owned by the fetching app; overwritten whole on refetch."
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true,
+      "description": "'namespace:value' allowed (status: to-read, reading, read; topic:)."
+    },
+    "note": {
+      "type": "string",
+      "description": "The user's note; 'csl.note' may be printed."
+    },
+    "added": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601."
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^(?![/\\\\]|[A-Za-z]:)(?!(.*[/\\\\])?\\.\\.([/\\\\]|$))",
+            "description": "Relative; no '..'."
+          },
+          "label": { "type": "string" }
+        }
+      },
+      "description": "Order and labels only; unlisted files follow by name, missing ones are ignored. The first is the main file."
+    }
+  },
+  "additionalProperties": true,
+  "definitions": {
+    "item": {
+      "allOf": [
+        { "$ref": "https://resource.citationstyles.org/schema/v1.0/input/json/csl-data.json#/items" },
+        {
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_:-]+$"
+            }
+          }
+        }
+      ]
+    },
+    "source": {
+      "type": "object",
+      "required": ["csl"],
+      "properties": {
+        "csl": { "$ref": "#/definitions/item" },
+        "fetched": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": true
+    }
+  },
+  "examples": [
+    {
+      "v": 1,
+      "sources": {
+        "inspire": {
+          "csl": {
+            "id": "Maldacena:1997re",
+            "type": "article-journal",
+            "title": "The Large N limit of superconformal field theories and supergravity",
+            "author": [{ "family": "Maldacena", "given": "Juan Martin" }],
+            "container-title": "Adv. Theor. Math. Phys.",
+            "volume": "2",
+            "page": "231-252",
+            "issued": { "raw": "1997-11" },
+            "DOI": "10.4310/ATMP.1998.v2.n2.a1",
+            "note": "Int.J.Theor.Phys. 38 (1999) 1113"
+          },
+          "fetched": "2026-11-14T10:02:00+09:00",
+          "recid": 451647,
+          "arxiv": "hep-th/9711200"
+        }
+      },
+      "added": "2026-11-14T10:02:00+09:00",
+      "files": [{ "path": "hep-th-9711200.pdf" }]
+    },
+    {
+      "v": 1,
+      "csl": {
+        "id": "Maldacena:1997re",
+        "type": "article-journal",
+        "note": "Reprinted in Int. J. Theor. Phys. 38 (1999) 1113–1133."
+      },
+      "sources": {
+        "inspire": {
+          "csl": {
+            "id": "Maldacena:1997re",
+            "type": "article-journal",
+            "title": "The Large N limit of superconformal field theories and supergravity",
+            "author": [{ "family": "Maldacena", "given": "Juan Martin" }],
+            "container-title": "Adv. Theor. Math. Phys.",
+            "volume": "2",
+            "page": "231-252",
+            "issued": { "raw": "1997-11" },
+            "DOI": "10.4310/ATMP.1998.v2.n2.a1",
+            "note": "Int.J.Theor.Phys. 38 (1999) 1113"
+          },
+          "fetched": "2026-11-14T10:02:00+09:00",
+          "recid": 451647,
+          "arxiv": "hep-th/9711200"
+        }
+      },
+      "tags": ["status:read", "topic:AdS/CFT"],
+      "note": "§3 の相関関数の議論を読み直す",
+      "added": "2026-11-14T10:02:00+09:00",
+      "files": [{ "path": "hep-th-9711200.pdf" }]
+    },
+    {
+      "v": 1,
+      "csl": {
+        "id": "Takagi:1971",
+        "type": "book",
+        "title": "初等整数論講義",
+        "author": [{ "family": "高木", "given": "貞治" }],
+        "edition": "2",
+        "publisher": "共立出版",
+        "issued": { "date-parts": [[1971]] },
+        "language": "ja"
+      },
+      "tags": ["status:reading", "topic:number-theory"],
+      "added": "2026-10-03T21:15:00+09:00",
+      "files": [
+        { "path": "scan.pdf", "label": "本文" },
+        { "path": "errata.pdf", "label": "正誤表" }
+      ]
+    },
+    {
+      "v": 1,
+      "csl": {
+        "id": "Gauss:1966",
+        "type": "book",
+        "title": "Disquisitiones arithmeticae",
+        "author": [{ "family": "Gauss", "given": "Carl Friedrich" }],
+        "translator": [{ "family": "Clarke", "given": "Arthur A." }],
+        "publisher": "Yale University Press",
+        "publisher-place": "New Haven",
+        "issued": { "date-parts": [[1966]] },
+        "original-date": { "date-parts": [[1801]] },
+        "language": "en"
+      },
+      "tags": ["status:to-read", "topic:number-theory"],
+      "added": "2026-10-05T09:40:00+09:00"
+    },
+    {
+      "v": 1,
+      "csl": {
+        "id": "pyhf",
+        "type": "software",
+        "title": "pyhf",
+        "author": [
+          { "family": "Heinrich", "given": "Lukas" },
+          { "family": "Feickert", "given": "Matthew" },
+          { "family": "Stark", "given": "Giordon" }
+        ],
+        "URL": "https://github.com/scikit-hep/pyhf"
+      },
+      "tags": ["topic:statistics"],
+      "added": "2026-11-01T16:20:00+09:00"
+    },
+    {
+      "v": 1
+    }
+  ]
+}
