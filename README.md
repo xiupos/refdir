@@ -13,7 +13,8 @@ A folder format for reference libraries, and an implementation of it.
 
 ```sh
 git clone --recurse-submodules https://github.com/xiupos/refdir
-cargo install --path refdir
+cd refdir
+cargo install --path .
 ```
 
 ## Use
