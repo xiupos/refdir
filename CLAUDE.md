@@ -39,7 +39,8 @@ As of 2026-11-14:
 - **Folder name vs key (`name_matches_id`)**: the name matches when it equals the key with `:` → `-`, or that plus `-N` with N ≥ 2 and no leading zero. Case must match. An entry without a key always matches.
 - **`find`** searches the resolved `title`, `author` (every string part), `id`, and the entry's `note` (not `csl.note`).
 - **`show`'s sources**: for each source, its `csl.id`, `recid` and `arxiv` where present.
-- **Duplicate keys in `bib`**: the first entry by folder name is used. The others get a warning, and the exit status is 1.
+- **Several libraries** (since 2026-11-14, to use heplio-gtk's library with others): `--library`, repeated, or `$REFDIR` split by `std::env::split_paths`. The CLI reads each with `Library::read` and joins `entries` in that order; the lib and the spec still know one library. Keys and INSPIRE records are checked across them, as `bib` cannot write a key twice. With more than one library, `check` names folders by path.
+- **Duplicate keys in `bib`**: the first entry by library, then by folder name, is used. The others get a warning, and the exit status is 1.
 
 ## The CLI
 

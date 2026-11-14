@@ -40,9 +40,10 @@ fn written(result: std::io::Result<()>) {
 #[derive(Parser)]
 #[command(name = "refdir", version)]
 struct Cli {
-    /// The library folder
-    #[arg(long, env = "REFDIR", global = true)]
-    library: Option<PathBuf>,
+    /// A library folder; repeat for more. Without it, $REFDIR: folders separated as in PATH (':').
+    /// Entries come in the order of the libraries, then of their folders
+    #[arg(long, global = true)]
+    library: Vec<PathBuf>,
     #[command(subcommand)]
     command: Command,
 }
@@ -113,9 +114,17 @@ fn main() -> ExitCode {
 
 /// Says whether all went well
 fn run(cli: Cli) -> Result<bool> {
-    let Some(path) = cli.library else { bail!("no library: set REFDIR or pass --library") };
-    let library =
-        Library::read(&path).with_context(|| format!("cannot read the library {}", path.display()))?;
+    let paths = if cli.library.is_empty() { from_env() } else { cli.library };
+    if paths.is_empty() {
+        bail!("no library: set REFDIR or pass --library");
+    }
+    let mut library = Library::default();
+    for path in &paths {
+        let one =
+            Library::read(path).with_context(|| format!("cannot read the library {}", path.display()))?;
+        library.entries.extend(one.entries);
+        library.unreadable.extend(one.unreadable);
+    }
     if !matches!(cli.command, Command::Check) {
         for (dir, e) in &library.unreadable {
             warn!("skipped {}: {e}", dir.display());
@@ -130,8 +139,14 @@ fn run(cli: Cli) -> Result<bool> {
         Command::Show { key } => show(&library, &key),
         Command::Open { key } => open(&library, &key),
         Command::Bib { aux, tag, all: _, format } => bib(&library, aux.as_deref(), &tag, format),
-        Command::Check => check(&library),
+        Command::Check => check(&library, paths.len() > 1),
     }
+}
+
+/// The libraries in `$REFDIR`, separated as `PATH` is. Empty ones are left out
+fn from_env() -> Vec<PathBuf> {
+    let Some(value) = std::env::var_os("REFDIR") else { return Vec::new() };
+    std::env::split_paths(&value).filter(|p| !p.as_os_str().is_empty()).collect()
 }
 
 // MARK: - ls, find
@@ -345,12 +360,15 @@ fn write_bibtex(cited: &[Cited]) -> bool {
 
 // MARK: - check
 
-/// A folder's name, as `check` says it
-fn folder(dir: &Path) -> String {
-    dir.file_name().unwrap_or_default().to_string_lossy().into_owned()
-}
-
-fn check(library: &Library) -> Result<bool> {
+/// A folder as `check` says it: its name, or its path when there is more than one library
+fn check(library: &Library, several: bool) -> Result<bool> {
+    let folder = |dir: &Path| {
+        if several {
+            dir.display().to_string()
+        } else {
+            dir.file_name().unwrap_or_default().to_string_lossy().into_owned()
+        }
+    };
     let schema = schema::Schema::new()?;
     let (mut errors, mut warnings) = (0, 0);
     let mut error = |text: String| {

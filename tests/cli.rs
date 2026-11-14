@@ -180,3 +180,44 @@ fn no_library() {
     let out = Command::new(env!("CARGO_BIN_EXE_refdir")).env_remove("REFDIR").arg("ls").output().unwrap();
     assert_eq!(out.status.code(), Some(2));
 }
+
+#[test]
+fn several_libraries() {
+    let lib = library();
+    let other = TempDir::new().unwrap();
+    let schema: Value = serde_json::from_str(&fs::read_to_string("schema/v1.json").unwrap()).unwrap();
+    // The first example has the key and INSPIRE record of Maldacena-1997re in `lib`
+    write(other.path(), "Maldacena-1997re", &schema["examples"][0]);
+    write(other.path(), "Witten-1998", &serde_json::json!({ "v": 1, "csl": { "id": "Witten:1998" } }));
+
+    // $REFDIR is separated as PATH is; empty parts are left out
+    let both = std::env::join_paths([lib.path(), Path::new(""), other.path()]).unwrap();
+    let out = refdir(Path::new(&both), &["ls", "-q"]);
+    let keys = stdout(&out);
+    assert!(keys.starts_with("ATLAS:2012yve\n"));
+    assert!(keys.ends_with("Maldacena:1997re\nWitten:1998\n"));
+
+    // --library, repeated, replaces $REFDIR
+    let (a, b) = (lib.path().to_str().unwrap(), other.path().to_str().unwrap());
+    let out = refdir(Path::new("/nonexistent"), &["show", "witten:1998", "--library", b, "--library", a]);
+    assert!(out.status.success());
+
+    // A key in both: the earlier library's entry, a warning and status 1
+    let out = refdir(lib.path(), &["--library", b, "--library", a, "bib", "--all", "--format", "csl-json"]);
+    assert_eq!(out.status.code(), Some(1));
+    let items: Value = serde_json::from_slice(&out.stdout).unwrap();
+    let maldacena = items.as_array().unwrap().iter().find(|i| i["id"] == "Maldacena:1997re").unwrap();
+    assert_eq!(maldacena["note"], "Int.J.Theor.Phys. 38 (1999) 1113");
+    assert!(String::from_utf8_lossy(&out.stderr).contains("another entry has the key Maldacena:1997re"));
+
+    // check names folders by their path
+    let out = refdir(Path::new(&both), &["check"]);
+    assert_eq!(out.status.code(), Some(1));
+    let (m1, m2) = (lib.path().join("Maldacena-1997re"), other.path().join("Maldacena-1997re"));
+    let expected =
+        format!("error: 2 entries have the key Maldacena:1997re: {}, {}\n", m1.display(), m2.display());
+    assert!(stdout(&out).contains(&expected), "{}", stdout(&out));
+
+    let out = refdir(lib.path(), &["--library", "/nonexistent", "ls"]);
+    assert_eq!(out.status.code(), Some(2));
+}

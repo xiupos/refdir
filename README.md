@@ -18,7 +18,9 @@ cargo install --path refdir
 
 ## Use
 
-The library is `$REFDIR`, or `--library <folder>`.
+The library is `$REFDIR`, or `--library <folder>`. Several libraries are read as one:
+`REFDIR=~/heplio:~/papers` (separated as `PATH` is), or `--library` repeated. A key in more than
+one of them is a duplicate, as within one library; the earlier library's entry is used.
 
 ```sh
 refdir ls [--tag T] [-q] [--json]     # key, first author, year, title; -q: keys; --json: JSON Lines
