@@ -1,0 +1,6 @@
+[submodule "schema/csl"]
+	path = schema/csl
+	url = https://github.com/citation-style-language/schema.git
+[submodule "schema/refdir"]
+	path = schema/refdir
+	url = https://github.com/xiupos/refdir.git

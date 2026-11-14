@@ -1,0 +1,27 @@
+[package]
+name = "refdir-cli"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "A command-line tool for refdir v1 libraries"
+repository = "https://github.com/xiupos/refdir-cli"
+
+[[bin]]
+name = "refdir"
+path = "src/main.rs"
+
+[workspace]
+members = ["refdir"]
+default-members = [".", "refdir"]
+
+[dependencies]
+refdir = { path = "refdir" }
+anyhow = "1"
+clap = { version = "4", features = ["derive", "env"] }
+# Without the default features, which fetch `$ref`s over the network
+jsonschema = { version = "0.61", default-features = false }
+open = "5"
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"
