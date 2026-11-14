@@ -1,18 +1,18 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "refdir v1",
-  "description": "A folder directly inside the library containing 'entry.json' (this file) is one reference; its other files belong to it, except names starting with '.'. The main file is the first file directly in it by name (ASCII case ignored, then code point order). Other things in the library are ignored; names starting with '.' are for apps. Folder name: resolved 'csl.id' with ':' -> '-', unique ignoring case; only a hint. Omit empty fields; keep unknown keys; write via a temp file. The app creating the entry writes 'v' and 'added'; then fetching apps write only 'sources.<app>', and the library app and the user write 'csl', 'tags', 'note'. Put other app keys under the app's name.",
+  "description": "A folder directly inside the library containing 'entry.json' (this file) is one reference; its other files belong to it, in subfolders too, except names starting with '.' at any depth. The main file is the first file directly in it by name (ASCII letters compared in lower case, then code point order). Other things in the library are ignored; names starting with '.' are for apps. Folder name: resolved 'csl.id' with ':' -> '-', then '-2', '-3', … until unique ignoring ASCII case; any name without 'csl.id'; only a hint. Omit empty fields; keep unknown keys; write via a temp file. The app creating the entry writes 'v' and 'added'; then fetching apps write only 'sources.<app>', and the library app and the user write 'csl', 'tags', 'note'. Put other app keys under the app's name.",
   "type": "object",
   "required": ["v"],
   "properties": {
     "$schema": { "type": "string" },
     "v": {
       "const": 1,
-      "description": "Spec version."
+      "description": "Spec version. Readers skip entries with another value."
     },
     "csl": {
       "allOf": [{ "$ref": "#/definitions/item" }],
-      "description": "The user's CSL-JSON item. Resolved item: each 'sources.*.csl' in key order, then 'csl'; a later field replaces an earlier one whole (e.g. 'author'). 'id' is the citation key, unique in the library ignoring case. Text fields are plain text (no TeX)."
+      "description": "The user's CSL-JSON item. Resolved item: each 'sources.*.csl' in the order its keys appear in the file, then 'csl'; a later field replaces an earlier one whole (e.g. 'author'). 'id' is the citation key, unique in the library ignoring ASCII case. Text fields are plain text (no TeX)."
     },
     "sources": {
       "type": "object",

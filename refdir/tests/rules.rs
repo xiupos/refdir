@@ -51,6 +51,7 @@ fn only_objects_with_v_1_are_read() {
     let lib = TempDir::new().unwrap();
     let p = lib.path();
     let ok = write_entry(p, "ok", &json!({ "v": 1, "x": [] }));
+    let float = write_entry(p, "float", &json!({ "v": 1.0 }));
     let v2 = write_entry(p, "v2", &json!({ "v": 2 }));
     let no_v = write_entry(p, "no-v", &json!({}));
     let string_v = write_entry(p, "string-v", &json!({ "v": "1" }));
@@ -60,6 +61,7 @@ fn only_objects_with_v_1_are_read() {
     fs::write(broken.join(ENTRY), "{").unwrap();
 
     assert!(read_entry(&ok).is_ok());
+    assert!(read_entry(&float).is_ok());
     assert!(matches!(read_entry(&v2), Err(Error::NotV1(Some(_)))));
     assert!(matches!(read_entry(&no_v), Err(Error::NotV1(None))));
     assert!(matches!(read_entry(&string_v), Err(Error::NotV1(Some(_)))));
@@ -67,7 +69,7 @@ fn only_objects_with_v_1_are_read() {
     assert!(matches!(read_entry(&broken), Err(Error::Json(_))));
 
     let library = Library::read(p).unwrap();
-    assert_eq!(names(&library.entries.iter().map(|e| e.dir.clone()).collect::<Vec<_>>()), ["ok"]);
+    assert_eq!(names(&library.entries.iter().map(|e| e.dir.clone()).collect::<Vec<_>>()), ["float", "ok"]);
     assert_eq!(library.unreadable.len(), 5);
 }
 

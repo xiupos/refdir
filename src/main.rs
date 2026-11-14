@@ -365,9 +365,9 @@ fn check(library: &Library) -> Result<bool> {
     };
     for (dir, e) in &library.unreadable {
         match e {
-            // A later version's entry, which this version does not check
+            // Readers skip entries of another version
             refdir::Error::NotV1(Some(v)) if v.is_u64() => {
-                out!("warning: {}: version {v}, not checked", folder(dir));
+                out!("warning: {}: version {v}, skipped", folder(dir));
                 warnings += 1;
             }
             e => error(format!("{}: {e}", folder(dir))),

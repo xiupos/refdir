@@ -78,14 +78,14 @@ pub fn entry_dirs(library: &Path) -> io::Result<Vec<PathBuf>> {
     Ok(dirs)
 }
 
-/// Reads `entry.json` in `dir`: an object with `v` 1
+/// Reads `entry.json` in `dir`: an object with `v` 1. As for the schema's `const`, `1.0` is 1
 pub fn read_entry(dir: &Path) -> Result<Map<String, Value>, Error> {
     let text = fs::read_to_string(dir.join(ENTRY))?;
     let Value::Object(data) = serde_json::from_str(&text).map_err(Error::Json)? else {
         return Err(Error::NotObject);
     };
     match data.get("v") {
-        Some(v) if v.as_u64() == Some(1) => Ok(data),
+        Some(v) if v.as_f64() == Some(1.0) => Ok(data),
         v => Err(Error::NotV1(v.cloned())),
     }
 }
@@ -250,13 +250,13 @@ pub fn folder_name(id: &str) -> String {
 }
 
 /// A folder name for a new entry: [`folder_name`], then with `-2`, `-3`, … until no name in the
-/// library is the same, ignoring case
+/// library is the same, ignoring ASCII case. Names without a citation key are any
 pub fn free_name(library: &Path, id: &str) -> io::Result<String> {
     let taken: Vec<String> = fs::read_dir(library)?
-        .map(|e| e.map(|e| e.file_name().to_string_lossy().to_lowercase()))
+        .map(|e| e.map(|e| e.file_name().to_string_lossy().to_ascii_lowercase()))
         .collect::<io::Result<_>>()?;
     let base = folder_name(id);
-    let free = |n: &String| !taken.contains(&n.to_lowercase());
+    let free = |n: &String| !taken.contains(&n.to_ascii_lowercase());
     Ok(std::iter::once(base.clone()).chain((2..).map(|i| format!("{base}-{i}"))).find(free).unwrap())
 }
 

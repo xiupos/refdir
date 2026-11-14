@@ -172,7 +172,7 @@ fn check() {
     assert!(text.contains(
         "warning: old-name: the folder name is not Maldacena-1997re for the key Maldacena:1997re\n"
     ));
-    assert!(text.contains("warning: later: version 2, not checked\n"));
+    assert!(text.contains("warning: later: version 2, skipped\n"));
 }
 
 #[test]
