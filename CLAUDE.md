@@ -24,9 +24,9 @@ Check with `cargo fmt`, `cargo clippy --all-targets` and `cargo test`. `default-
 
 ## The lib crate
 
-- **heplio-gtk (`~/Projects/heplio-gtk`) will depend on it** with `git = "https://github.com/xiupos/refdir"`. Keep the lib free of CLI crates (clap, jsonschema, …): its only dependency is serde_json. The API takes and returns `serde_json::Map` / `Value`, so that each app converts them to its own types.
+- **heplio-gtk (`~/Projects/heplio-gtk`) depends on it** (since 2026-11-14, its commit 48f10b9) with `git = "https://github.com/xiupos/refdir"`. Keep the lib free of CLI crates (clap, jsonschema, …): its only dependency is serde_json. The API takes and returns `serde_json::Map` / `Value`, so that each app converts them to its own types.
 - **`preserve_order` is required**, not cosmetic: the resolved item layers `sources` in the order their keys appear in the file. The lib turns the feature on itself, since a dependent might not.
-- **heplio-gtk's `core.rs` (`// MARK: - Library`) is where these rules came from**: `read_entry`, `resolved`, `entry_files`, `free_name`, `new_id`, `write_atomic`. On 2026-11-14 it was still behind in two places: it sorts the main file by plain `sort()`, and `free_name` compares with Unicode `to_lowercase`. Switching it to this lib fixes both.
+- **heplio-gtk's `core.rs` (`// MARK: - Library`) is where these rules came from.** It now calls the lib for them; its `Cargo.lock` pins a refdir commit, so a lib change reaches it only after `cargo update -p refdir` there.
 - **Errors.** `Error::NotV1` keeps `v` so that `check` can tell a later version's entry (a warning: readers skip it) from a broken one (an error). `v` is compared as a number, so `1.0` counts as 1, as the schema's `const` treats it.
 - **`resolved_field` / `Entry::field`** read one field without cloning the rest. `id()` and `Library::find` run for every entry on every lookup, so use them, not `resolved()`, for a single field. A test checks that they agree with `resolve`.
 - **Writing**: a library app writes only `csl`, `tags` and `note` (`Field`), and `write_field` reads the file again just before writing. Other apps may have changed it since; the lib does not keep a copy around to write back.
@@ -74,7 +74,6 @@ As of 2026-11-14:
 - `open` launching a real app (the tests cover only the error paths)
 - Names that are not UTF-8
 - Case-insensitive file systems (macOS, Windows)
-- heplio-gtk building against the lib as a git dependency
 
 ## Milestones
 
