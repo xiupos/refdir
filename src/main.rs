@@ -16,14 +16,14 @@ macro_rules! out {
     ($($arg:tt)*) => { written(writeln!(std::io::stdout(), $($arg)*)) };
 }
 
-/// A warning on standard error
-macro_rules! warn {
-    ($($arg:tt)*) => { eprintln!("refdir: warning: {}", format_args!($($arg)*)) };
-}
-
 /// `print!`, the same
 macro_rules! out_raw {
     ($($arg:tt)*) => { written(write!(std::io::stdout(), $($arg)*)) };
+}
+
+/// A warning on standard error
+macro_rules! warn {
+    ($($arg:tt)*) => { eprintln!("refdir: warning: {}", format_args!($($arg)*)) };
 }
 
 fn written(result: std::io::Result<()>) {
@@ -62,6 +62,14 @@ enum Command {
     Show { key: String },
     /// Open an entry's main file with the default app
     Open { key: String },
+    /// Without a key, list the library's tags and how many entries have each. With a key, show the
+    /// entry's tags, or change them: +TAG adds one at the end, -TAG removes one, in that order
+    Tag {
+        key: Option<String>,
+        /// +TAG or -TAG
+        #[arg(allow_hyphen_values = true, requires = "key")]
+        changes: Vec<String>,
+    },
     /// Write the entries cited in a .aux file, or those with a tag, or all, to standard output
     #[command(group(ArgGroup::new("input").required(true).args(["aux", "tag", "all"])))]
     Bib {
@@ -82,7 +90,7 @@ enum Command {
 
 #[derive(clap::Args)]
 struct ListArgs {
-    /// Only the entries with this tag; more than one means all of them
+    /// Only the entries with this tag; more than one means all of them. Case matters
     #[arg(long)]
     tag: Vec<String>,
     /// Only the keys
@@ -138,6 +146,13 @@ fn run(cli: Cli) -> Result<bool> {
         }
         Command::Show { key } => show(&library, &key),
         Command::Open { key } => open(&library, &key),
+        Command::Tag { key: None, .. } => {
+            for (tag, n) in library.tags() {
+                out!("{n}\t{tag}");
+            }
+            Ok(true)
+        }
+        Command::Tag { key: Some(key), changes } => tag_entry(&library, &key, &changes),
         Command::Bib { aux, tag, all: _, format } => bib(&library, aux.as_deref(), &tag, format),
         Command::Check => check(&library, paths.len() > 1),
     }
@@ -152,8 +167,7 @@ fn from_env() -> Vec<PathBuf> {
 // MARK: - ls, find
 
 fn has_tags(entry: &Entry, tags: &[String]) -> bool {
-    let own = entry.tags();
-    tags.iter().all(|t| own.contains(&t.as_str()))
+    tags.iter().all(|t| entry.has_tag(t))
 }
 
 fn list(library: &Library, args: &ListArgs, keep: impl Fn(&Entry) -> bool) -> Result<bool> {
@@ -259,20 +273,57 @@ fn source_ids(source: &Value) -> String {
     if ids.is_empty() { String::new() } else { format!(" ({})", ids.join(", ")) }
 }
 
-fn open(library: &Library, key: &str) -> Result<bool> {
-    let entry = match find(library, key).as_slice() {
-        [] => return Ok(false),
-        [entry] => *entry,
+/// The one entry with the key. None is said on standard error; more than one is an error
+fn find_one<'a>(library: &'a Library, key: &str) -> Result<Option<&'a Entry>> {
+    match find(library, key).as_slice() {
+        [] => Ok(None),
+        [entry] => Ok(Some(*entry)),
         found => {
             let dirs: Vec<String> = found.iter().map(|e| e.dir.display().to_string()).collect();
             bail!("more than one entry has the key {key}: {}", dirs.join(", "));
         }
-    };
+    }
+}
+
+fn open(library: &Library, key: &str) -> Result<bool> {
+    let Some(entry) = find_one(library, key)? else { return Ok(false) };
     let Some(main) = entry.main_file()? else {
         eprintln!("refdir: {} has no file", entry.dir.display());
         return Ok(false);
     };
     open::that_detached(&main).with_context(|| format!("cannot open {}", main.display()))?;
+    Ok(true)
+}
+
+// MARK: - tag
+
+/// Shows the entry's tags after the changes, which are written at once
+fn tag_entry(library: &Library, key: &str, changes: &[String]) -> Result<bool> {
+    let Some(entry) = find_one(library, key)? else { return Ok(false) };
+    if changes.is_empty() {
+        entry.tags().iter().for_each(|t| out!("{t}"));
+        return Ok(true);
+    }
+    let changes = changes
+        .iter()
+        .map(|c| match c.split_at_checked(1) {
+            Some((sign @ ("+" | "-"), tag)) => Ok((sign == "+", tag)),
+            _ => bail!("{c:?} is neither +TAG nor -TAG"),
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let edit = |tags: &mut Vec<String>| {
+        for &(add, tag) in &changes {
+            if add {
+                refdir::tags::add(tags, tag)?;
+            } else {
+                refdir::tags::remove(tags, tag);
+            }
+        }
+        Ok(())
+    };
+    let tags = refdir::edit_tags(&entry.dir, edit)
+        .map_err(|e| anyhow::anyhow!("cannot change the tags of {}: {e}", entry.dir.display()))?;
+    tags.iter().for_each(|t| out!("{t}"));
     Ok(true)
 }
 

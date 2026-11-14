@@ -1,15 +1,18 @@
-//! The rules of [refdir](https://github.com/xiupos/refdir) v1, a folder format for reference
-//! libraries. The specification is `schema/v1.json` in that repository.
+//! Reading and writing [refdir](https://github.com/xiupos/refdir) v1 libraries. The specification
+//! is `schema/v1.json` there; where it leaves a choice open (name order, folder names, tags, …),
+//! this crate makes one.
 //!
-//! The functions take and return `serde_json` maps and values, which callers convert to their own
+//! The functions take and return `serde_json` maps and values, which apps convert to their own
 //! types.
 
 use serde_json::{Map, Value};
 use std::cmp::Ordering;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::{fmt, fs, io};
+
+pub mod tags;
 
 /// The file that makes a folder an entry
 pub const ENTRY: &str = "entry.json";
@@ -24,6 +27,10 @@ pub enum Error {
     NotObject,
     /// `v` is not 1. It holds `v`, if it is there
     NotV1(Option<Value>),
+    /// `tags` is not an array of strings, so it is not written
+    Tags,
+    /// A tag to write is empty
+    EmptyTag,
 }
 
 impl fmt::Display for Error {
@@ -34,6 +41,8 @@ impl fmt::Display for Error {
             Error::NotObject => write!(f, "{ENTRY} is not an object"),
             Error::NotV1(None) => write!(f, "{ENTRY} has no 'v'"),
             Error::NotV1(Some(v)) => write!(f, "{ENTRY} has 'v' {v}, not 1"),
+            Error::Tags => write!(f, "{ENTRY} has 'tags' that is not an array of strings"),
+            Error::EmptyTag => write!(f, "a tag cannot be empty"),
         }
     }
 }
@@ -143,10 +152,19 @@ impl Entry {
         self.field("id")?.as_str()
     }
 
-    /// `tags`, without those that are not strings
+    /// `tags`, skipping what is not a string. Writing is stricter: see [`edit_tags`]
     pub fn tags(&self) -> Vec<&str> {
+        self.tag_iter().collect()
+    }
+
+    /// Whether the entry has the tag, as written
+    pub fn has_tag(&self, tag: &str) -> bool {
+        self.tag_iter().any(|t| t == tag)
+    }
+
+    fn tag_iter(&self) -> impl Iterator<Item = &str> {
         let tags = self.data.get("tags").and_then(Value::as_array).into_iter().flatten();
-        tags.filter_map(Value::as_str).collect()
+        tags.filter_map(Value::as_str)
     }
 
     pub fn note(&self) -> Option<&str> {
@@ -262,6 +280,20 @@ impl Library {
         duplicates(self.entries.iter().filter_map(|e| Some((e.id()?.to_ascii_lowercase(), e))))
     }
 
+    /// Every tag in the library and the number of entries with it, in [`tags::cmp`] order
+    pub fn tags(&self) -> Vec<(&str, usize)> {
+        let mut counts: HashMap<&str, usize> = HashMap::new();
+        for entry in &self.entries {
+            let mut own = entry.tags();
+            own.sort_unstable();
+            own.dedup();
+            own.into_iter().for_each(|t| *counts.entry(t).or_default() += 1);
+        }
+        let mut counts: Vec<_> = counts.into_iter().collect();
+        counts.sort_by(|(a, _), (b, _)| tags::cmp(a, b));
+        counts
+    }
+
     /// The entries that share `sources.inspire.recid`
     pub fn duplicate_recids(&self) -> Vec<(u64, Vec<&Entry>)> {
         duplicates(self.entries.iter().filter_map(|e| Some((e.inspire_recid()?, e))))
@@ -317,15 +349,50 @@ impl Field {
     }
 }
 
-/// Reads the entry in `dir` again, sets `field` to `value` and writes it. Empty fields are left
-/// out, and so is the field if it is empty; the other keys stay as they are
+/// Reads the entry in `dir` again, sets `field` to `value` without its empty fields (or removes
+/// it, if it is empty), and writes it. The other keys stay as they are. For `tags`, use
+/// [`edit_tags`]
 pub fn write_field(dir: &Path, field: Field, value: Value) -> Result<(), Error> {
-    let mut data = read_entry(dir)?;
+    put(dir, read_entry(dir)?, field, value)
+}
+
+/// Reads the entry in `dir` again, edits its tags and writes them without repeats, the first of
+/// each kept. Returns the tags as written. Writes nothing if they are unchanged, if `edit` fails,
+/// or if `tags` is not an array of strings ([`Error::Tags`]), which [`Entry::tags`] reads anyway
+pub fn edit_tags(
+    dir: &Path,
+    edit: impl FnOnce(&mut Vec<String>) -> Result<(), Error>,
+) -> Result<Vec<String>, Error> {
+    let data = read_entry(dir)?;
+    let old = tags::read(&data)?;
+    let mut new = old.clone();
+    edit(&mut new)?;
+    tags::dedup(&mut new);
+    if new != old {
+        put(dir, data, Field::Tags, new.clone().into())?;
+    }
+    Ok(new)
+}
+
+fn put(dir: &Path, mut data: Map<String, Value>, field: Field, value: Value) -> Result<(), Error> {
     match prune(value) {
         Some(value) => data.insert(field.key().to_owned(), value),
         None => data.shift_remove(field.key()),
     };
     Ok(write_atomic(&dir.join(ENTRY), &Value::Object(data))?)
+}
+
+/// [`edit_tags`] with [`tags::add`]
+pub fn add_tag(dir: &Path, tag: &str) -> Result<Vec<String>, Error> {
+    edit_tags(dir, |t| tags::add(t, tag))
+}
+
+/// [`edit_tags`] with [`tags::remove`]
+pub fn remove_tag(dir: &Path, tag: &str) -> Result<Vec<String>, Error> {
+    edit_tags(dir, |t| {
+        tags::remove(t, tag);
+        Ok(())
+    })
 }
 
 /// `value` without its empty fields, recursively: `null`, `""`, `[]` and `{}`. `None` if it is

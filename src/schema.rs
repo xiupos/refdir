@@ -71,5 +71,21 @@ mod tests {
         assert!(!errors(json!({ "v": 1, "sources": { "inspire": { "csl": { "id": "a", "type": "book" }, "recid": 0 } } }))
             .is_empty());
         assert!(!errors(json!({ "v": 1, "tags": ["a", "a"] })).is_empty());
+        assert_eq!(errors(json!({ "v": 1, "tags": [""] })).len(), 1);
+        // Any other string, as it is
+        for tag in [
+            " a ",
+            "a
+b",
+            ":",
+            "a b",
+            "a::b",
+            "topic:AdS/CFT",
+            "教科書",
+            "status:done",
+            "status:read",
+        ] {
+            assert_eq!(errors(json!({ "v": 1, "tags": [tag] })), Vec::<String>::new(), "{tag:?}");
+        }
     }
 }

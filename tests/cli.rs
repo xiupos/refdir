@@ -221,3 +221,51 @@ fn several_libraries() {
     let out = refdir(lib.path(), &["--library", "/nonexistent", "ls"]);
     assert_eq!(out.status.code(), Some(2));
 }
+
+#[test]
+fn tag() {
+    let lib = library();
+    // The library's tags, by namespace, then name
+    let out = stdout(&refdir(lib.path(), &["tag"]));
+    assert_eq!(
+        out,
+        "1\tHistFactory\n1\tstatus:read\n1\tstatus:reading\n1\tstatus:to-read\n\
+         1\ttopic:AdS/CFT\n2\ttopic:number-theory\n1\ttopic:statistics\n"
+    );
+    assert_eq!(stdout(&refdir(lib.path(), &["tag", "gauss:1966"])), "status:to-read\ntopic:number-theory\n");
+
+    // Changes in order; `status:` is a namespace like any other
+    let changes = ["-status:to-read", "+status:reading", "-topic:number-theory", "+Gauss"];
+    let out = refdir(lib.path(), &[&["tag", "Gauss:1966"][..], &changes].concat());
+    assert!(out.status.success());
+    assert_eq!(stdout(&out), "status:reading\nGauss\n");
+    assert_eq!(
+        stdout(&refdir(lib.path(), &["ls", "-q", "--tag", "status:reading"])),
+        "Gauss:1966\nTakagi:1971\n"
+    );
+    // Case matters
+    assert_eq!(
+        stdout(&refdir(lib.path(), &["ls", "-q", "--tag", "Gauss"])),
+        "Gauss:1966
+"
+    );
+    assert_eq!(stdout(&refdir(lib.path(), &["ls", "-q", "--tag", "gauss"])), "");
+
+    // Nothing is written when a change is wrong
+    let before = fs::read_to_string(lib.path().join("Gauss-1966/entry.json")).unwrap();
+    for change in ["+", "x"] {
+        assert_eq!(
+            refdir(lib.path(), &["tag", "Gauss:1966", "+y", change]).status.code(),
+            Some(2),
+            "{change:?}"
+        );
+    }
+    assert_eq!(fs::read_to_string(lib.path().join("Gauss-1966/entry.json")).unwrap(), before);
+    assert_eq!(refdir(lib.path(), &["tag", "Nobody:2000", "+x"]).status.code(), Some(1));
+
+    // Removing the last tag leaves no `tags`
+    refdir(lib.path(), &["tag", "pyhf", "-topic:statistics", "-HistFactory"]);
+    let pyhf: Value =
+        serde_json::from_str(&fs::read_to_string(lib.path().join("pyhf/entry.json")).unwrap()).unwrap();
+    assert!(pyhf.get("tags").is_none());
+}

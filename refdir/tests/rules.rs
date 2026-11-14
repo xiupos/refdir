@@ -305,3 +305,180 @@ fn pruning_removes_empty_values() {
     );
     assert_eq!(prune(json!({ "a": { "b": "" } })), None);
 }
+
+// MARK: - Tags
+
+#[test]
+fn a_tag_is_any_string_but_the_empty_one_as_it_is() {
+    let mut t = Vec::new();
+    for tag in [
+        " a ",
+        "a",
+        "a
+b",
+        ":",
+        "status:done",
+    ] {
+        tags::add(&mut t, tag).unwrap();
+    }
+    assert_eq!(
+        t,
+        [
+            " a ",
+            "a",
+            "a
+b",
+            ":",
+            "status:done"
+        ]
+    );
+    assert!(matches!(tags::add(&mut t, ""), Err(Error::EmptyTag)));
+}
+
+#[test]
+fn the_namespace_is_before_the_first_colon() {
+    assert_eq!(tags::split("topic:AdS/CFT"), (Some("topic"), "AdS/CFT"));
+    assert_eq!(tags::split("a:b:c"), (Some("a"), "b:c"));
+    assert_eq!(tags::split("HistFactory"), (None, "HistFactory"));
+}
+
+#[test]
+fn tags_are_the_same_only_as_written() {
+    let entry = Entry { dir: PathBuf::new(), data: object(examples()[1].clone()) };
+    assert!(entry.has_tag("topic:AdS/CFT"));
+    assert!(!entry.has_tag("topic:ads/cft"));
+    let mut t = vec!["topic:AdS/CFT".to_owned()];
+    tags::add(&mut t, "topic:ads/cft").unwrap();
+    assert_eq!(t, ["topic:AdS/CFT", "topic:ads/cft"]);
+}
+
+#[test]
+fn new_tags_go_at_the_end_and_the_order_stays() {
+    let mut t = vec!["b".to_owned(), "a".to_owned()];
+    tags::add(&mut t, "c").unwrap();
+    tags::add(&mut t, "b").unwrap();
+    assert_eq!(t, ["b", "a", "c"]);
+    // Removed as written
+    let mut t = vec![" odd ".to_owned(), "a".to_owned()];
+    tags::remove(&mut t, "odd");
+    assert_eq!(t.len(), 2);
+    tags::remove(&mut t, " odd ");
+    assert_eq!(t, ["a"]);
+}
+
+#[test]
+fn status_is_a_namespace_like_any_other() {
+    let mut t = vec!["status:to-read".to_owned()];
+    tags::add(&mut t, "status:read").unwrap();
+    tags::add(&mut t, "status:done").unwrap();
+    assert_eq!(t, ["status:to-read", "status:read", "status:done"]);
+    assert_eq!(tags::split("status:read"), (Some("status"), "read"));
+}
+
+#[test]
+fn writing_tags_reads_the_entry_again_and_keeps_the_rest() {
+    let lib = TempDir::new().unwrap();
+    let dir = write_entry(lib.path(), "e", &examples()[1]);
+    let before = read_entry(&dir).unwrap();
+    // Another app changes the file after it was read
+    let entry = Entry::read(&dir).unwrap();
+    let mut changed = before.clone();
+    changed.insert("other-app".into(), json!(1));
+    write_atomic(&dir.join(ENTRY), &Value::Object(changed)).unwrap();
+
+    assert_eq!(
+        add_tag(&entry.dir, "topic:holography").unwrap(),
+        ["status:read", "topic:AdS/CFT", "topic:holography"]
+    );
+    assert_eq!(remove_tag(&dir, "topic:AdS/CFT").unwrap(), ["status:read", "topic:holography"]);
+    let after = read_entry(&dir).unwrap();
+    assert_eq!(after["other-app"], 1);
+    assert_eq!(after["sources"], before["sources"]);
+    let keys: Vec<&String> = after.keys().collect();
+    assert_eq!(keys, ["v", "csl", "sources", "tags", "note", "added", "other-app"]);
+
+    // No tags left: no `tags`
+    remove_tag(&dir, "topic:holography").unwrap();
+    assert_eq!(remove_tag(&dir, "status:read").unwrap(), Vec::<String>::new());
+    assert!(!read_entry(&dir).unwrap().contains_key("tags"));
+}
+
+#[test]
+fn writing_tags_removes_those_that_came_before() {
+    let lib = TempDir::new().unwrap();
+    let dir = write_entry(lib.path(), "e", &json!({ "v": 1, "tags": ["a", "b", "a"] }));
+    assert_eq!(add_tag(&dir, "c").unwrap(), ["a", "b", "c"]);
+}
+
+#[test]
+fn tags_that_do_not_change_are_not_written() {
+    let lib = TempDir::new().unwrap();
+    let text = r#"{"v":1,"tags":["status:read","a"]}"#;
+    let dir = lib.path().join("e");
+    fs::create_dir(&dir).unwrap();
+    fs::write(dir.join(ENTRY), text).unwrap();
+    add_tag(&dir, "a").unwrap();
+    add_tag(&dir, "status:read").unwrap();
+    remove_tag(&dir, "b").unwrap();
+    edit_tags(&dir, |_| Ok(())).unwrap();
+    assert_eq!(fs::read_to_string(dir.join(ENTRY)).unwrap(), text);
+    // Nor are entries without tags, given none
+    fs::write(dir.join(ENTRY), r#"{"v":1}"#).unwrap();
+    remove_tag(&dir, "a").unwrap();
+    assert_eq!(fs::read_to_string(dir.join(ENTRY)).unwrap(), r#"{"v":1}"#);
+}
+
+#[test]
+fn tags_that_cannot_be_read_are_not_written_over() {
+    let lib = TempDir::new().unwrap();
+    for (name, tags) in [("object", json!({ "a": 1 })), ("number", json!(["a", 1])), ("null", json!(null))] {
+        let dir = write_entry(lib.path(), name, &json!({ "v": 1, "tags": tags }));
+        let text = fs::read_to_string(dir.join(ENTRY)).unwrap();
+        assert!(matches!(add_tag(&dir, "b"), Err(Error::Tags)), "{name}");
+        assert!(matches!(remove_tag(&dir, "a"), Err(Error::Tags)), "{name}");
+        assert_eq!(fs::read_to_string(dir.join(ENTRY)).unwrap(), text);
+    }
+    // Reading skips what is not a string
+    let entry = Entry::read(&lib.path().join("number")).unwrap();
+    assert_eq!(entry.tags(), ["a"]);
+    // And an empty tag is not written
+    let dir = write_entry(lib.path(), "ok", &json!({ "v": 1 }));
+    assert!(matches!(add_tag(&dir, ""), Err(Error::EmptyTag)));
+    assert_eq!(read_entry(&dir).unwrap(), object(json!({ "v": 1 })));
+}
+
+#[test]
+fn the_library_tags_are_counted_by_namespace_then_name() {
+    let lib = TempDir::new().unwrap();
+    for (i, example) in examples().iter().enumerate() {
+        write_entry(lib.path(), &format!("e{i}"), example);
+    }
+    write_entry(
+        lib.path(),
+        "x",
+        &json!({ "v": 1, "tags": ["b", "topic:Number-theory", "a:z", "topic:number-theory", "b"] }),
+    );
+    let library = Library::read(lib.path()).unwrap();
+    assert_eq!(
+        library.tags(),
+        [
+            ("b", 1),
+            ("HistFactory", 1),
+            ("a:z", 1),
+            ("status:read", 1),
+            ("status:reading", 1),
+            ("status:to-read", 1),
+            ("topic:AdS/CFT", 1),
+            ("topic:Number-theory", 1),
+            ("topic:number-theory", 3),
+            ("topic:statistics", 1),
+        ]
+    );
+}
+
+#[test]
+fn tags_are_ordered_without_a_namespace_first() {
+    let mut t = ["topic:b", "z", "a-b:c", "a:c", "A", "topic:A"];
+    t.sort_by(|a, b| tags::cmp(a, b));
+    assert_eq!(t, ["A", "z", "a:c", "a-b:c", "topic:A", "topic:b"]);
+}

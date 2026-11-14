@@ -2,11 +2,12 @@
 
 A folder format for reference libraries, and an implementation of it.
 
-- **The specification** is [`schema/v1.json`](schema/v1.json): a JSON Schema whose `description`s
-  and `examples` hold all the rules. It is under CC0 ([`LICENSE-CC0`](LICENSE-CC0)).
+- **The specification** is [`schema/v1.json`](schema/v1.json) alone: a JSON Schema whose
+  `description`s and `examples` hold the rules. It is under CC0 ([`LICENSE-CC0`](LICENSE-CC0)).
+  Anything else the implementation does is its own choice.
 - **The implementation**, under MIT ([`LICENSE-MIT`](LICENSE-MIT)):
-  - [`refdir/`](refdir): the `refdir` library crate, with the rules of refdir only. It reads and
-    writes `serde_json` maps and values, which apps convert to their own types.
+  - [`refdir/`](refdir): the `refdir` library crate, which reads and writes entries. It takes
+    and returns `serde_json` maps and values, which apps convert to their own types.
   - The root: the `refdir-cli` package, with the `refdir` command.
 
 ## Install the command
@@ -28,6 +29,7 @@ refdir ls [--tag T] [-q] [--json]     # key, first author, year, title; -q: keys
 refdir find <word>                    # in title, authors, key and note, ignoring case
 refdir show <key>                     # resolved item, tags, note, folder, files, sources
 refdir open <key>                     # the main file, with the default app
+refdir tag [<key> [+TAG|-TAG]...]     # the library's tags with counts; an entry's; add, remove
 refdir bib <file.aux> | --tag T | --all [--format bibtex|csl-json]
 refdir check                          # schema/v1.json, duplicate keys and INSPIRE records
 ```
