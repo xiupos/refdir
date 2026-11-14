@@ -12,7 +12,7 @@
     },
     "csl": {
       "allOf": [{ "$ref": "#/definitions/item" }],
-      "description": "The user's CSL-JSON item. Resolved item: each 'sources.*.csl' in key order, then 'csl'; a later field replaces an earlier one whole (e.g. 'author'). 'id' is the citation key. Text fields are plain text (no TeX)."
+      "description": "The user's CSL-JSON item. Resolved item: each 'sources.*.csl' in key order, then 'csl'; a later field replaces an earlier one whole (e.g. 'author'). 'id' is the citation key, unique in the library ignoring case. Text fields are plain text (no TeX)."
     },
     "sources": {
       "type": "object",
@@ -138,7 +138,7 @@
       "sources": {
         "inspire": {
           "csl": {
-            "id": "Aad:2012tfa",
+            "id": "ATLAS:2012yve",
             "type": "article-journal",
             "title": "Observation of a new particle in the search for the Standard Model Higgs boson with the ATLAS detector at the LHC",
             "author": [{ "literal": "ATLAS Collaboration" }],
