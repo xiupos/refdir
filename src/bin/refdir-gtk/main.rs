@@ -312,6 +312,10 @@ enum Msg {
     RemoveTag(String),
     /// Renames a tag in every entry that has it, or removes it if the new name is empty
     Retag(String, String),
+    /// Moves an entry's folder to the trash, and offers to undo it
+    Trash(PathBuf),
+    /// Moves an entry's folder back from the trash
+    Untrash(PathBuf),
     ChooseFolder,
     /// The folder in the settings changed
     Folder,
@@ -457,14 +461,7 @@ impl App {
                 WidgetExt::display(root).clipboard().set_text(&entry.bib.to_bibtex());
                 toast(&widgets.toasts, "BibTeX copied");
             }
-            // The trash is the undo
-            RowAction::Trash => match gio::File::for_path(&entry.dir).trash(gio::Cancellable::NONE) {
-                Ok(()) => {
-                    toast(&widgets.toasts, "Moved to the trash");
-                    self.reload(widgets, sender, false);
-                }
-                Err(e) => toast(&widgets.toasts, &format!("Could not move to the trash: {e}")),
-            },
+            RowAction::Trash => sender.input(Msg::Trash(entry.dir.clone())),
         }
     }
 
@@ -476,6 +473,7 @@ impl App {
                 EntryPane::builder().launch(entry).forward(sender.input_sender(), |output| match output {
                     entry::Output::Toast(text) => Msg::Toast(text),
                     entry::Output::Changed => Msg::Reload,
+                    entry::Output::Trash(dir) => Msg::Trash(dir),
                     entry::Output::OpenTag(tag) => Msg::OpenTag(tag),
                 });
             widgets.entry_page.set_child(Some(pane.widget()));
@@ -518,6 +516,34 @@ fn sort_menu() -> gio::Menu {
         menu.append_item(&item);
     }
     menu
+}
+
+/// Moves back the item of the trash that was last at `path`, as Files restores it: GIO has no call
+/// of its own for it, and the trash is gvfs's `trash:///`
+fn untrash(path: &Path) -> Result<(), String> {
+    let none = gio::Cancellable::NONE;
+    if path.exists() {
+        return Err(format!("{} is there again: the entry stays in the trash", name_of(path)));
+    }
+    let trash = gio::File::for_uri("trash:///");
+    let attributes = "standard::name,trash::orig-path,trash::deletion-date";
+    let items = trash.enumerate_children(attributes, gio::FileQueryInfoFlags::NONE, none);
+    let newest = items
+        .map_err(|e| format!("The trash cannot be read: {e}"))?
+        .flatten()
+        .filter(|info| {
+            info.attribute_byte_string("trash::orig-path").is_some_and(|p| Path::new(p.as_str()) == path)
+        })
+        .max_by_key(|info| info.attribute_as_string("trash::deletion-date").unwrap_or_default());
+    let item = newest.ok_or_else(|| format!("{} is not in the trash", name_of(path)))?;
+    trash
+        .child(item.name())
+        .move_(&gio::File::for_path(path), gio::FileCopyFlags::NONE, none, None)
+        .map_err(|e| format!("Could not move it back: {e}"))
+}
+
+fn name_of(path: &Path) -> String {
+    path.file_name().unwrap_or_default().to_string_lossy().into_owned()
 }
 
 fn toast(overlay: &adw::ToastOverlay, text: &str) {
@@ -827,6 +853,28 @@ impl Component for App {
                 });
                 dialog.present(Some(root));
             }
+            // Without asking: the toast's Undo, or the trash, gives it back
+            Msg::Trash(dir) => match gio::File::for_path(&dir).trash(gio::Cancellable::NONE) {
+                Ok(()) => {
+                    let toast = adw::Toast::builder()
+                        .title("Moved to the trash")
+                        .button_label("Undo")
+                        .priority(adw::ToastPriority::High)
+                        .build();
+                    let s = sender.clone();
+                    toast.connect_button_clicked(move |_| s.input(Msg::Untrash(dir.clone())));
+                    widgets.toasts.add_toast(toast);
+                    self.reload(widgets, &sender, false);
+                }
+                Err(e) => toast(&widgets.toasts, &format!("Could not move to the trash: {e}")),
+            },
+            Msg::Untrash(dir) => match untrash(&dir) {
+                Ok(()) => {
+                    self.reload(widgets, &sender, false);
+                    self.open(widgets, &dir, &sender);
+                }
+                Err(e) => toast(&widgets.toasts, &e),
+            },
             Msg::Retag(old, new) => {
                 let new = new.trim().to_owned();
                 if !new.is_empty() && !refdir::is_tag(&new) {

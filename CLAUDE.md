@@ -103,6 +103,11 @@ Crates are renamed: `gtk` is gtk4 and `adw` is libadwaita. Check with `cargo tes
   as `win.sort`), shown as the choices of the sort menu; a change rebuilds the list.
 - **Pango markup.** `adw::ActionRow` titles are markup by default; rows with text from entries
   set `use_markup: false`, since titles contain `<` and `&`.
+- **Moving to the trash** asks nothing: the toast's Undo gives the entry back (`untrash`), and
+  the trash after it. Both menus send it to the window (`Msg::Trash`), which owns the toast.
+  GIO cannot restore by itself; `untrash` finds in gvfs's `trash:///` the newest item whose
+  `trash::orig-path` is the entry's folder and moves it back, as Files does, unless a folder is
+  there again.
 - **Toasts** have high priority, so that a new one replaces the one shown.
 
 ## Testing the app
@@ -125,12 +130,15 @@ Drive it with `xdotool`, and look with `DISPLAY=:99 import -window root /tmp/rv/
 - `xclip -o -selection clipboard -display :99` shows what Copy BibTeX copied.
 - `refdir --library /tmp/rv/lib add …` in another terminal changes the library while the app
   runs, and shows the monitors at work.
+- The trash: `/tmp` is tmpfs, which has none. Put the test library under `~/.cache` and give
+  the session its own trash: `env XDG_DATA_HOME=~/.cache/rt/data dbus-run-session -- env …`
+  (the variable before `dbus-run-session`, so that gvfs's trash has it too). A toast lasts 5
+  seconds: click Undo in the same command that moves to the trash.
 - The file dialogs are the portal's, and hard to drive here: set the folder in the keyfile.
 - Another `refdir-gtk` may be the user's own: stop only those whose environment has
   `DISPLAY=:99`.
 
 ## Not verified
 
-- Moving to the trash (the test library is on tmpfs, which has none; the error is shown)
 - Exporting and choosing a folder with the file dialogs
 - Opening files and links in other apps

@@ -119,8 +119,10 @@ pub enum Msg {
 #[derive(Debug)]
 pub enum Output {
     Toast(String),
-    /// The entry changed, or was moved to the trash
+    /// The entry changed
     Changed,
+    /// Move the entry to the trash: the window does, as its toast can undo it
+    Trash(PathBuf),
     OpenTag(String),
 }
 
@@ -545,13 +547,7 @@ impl Component for EntryPane {
             }
             Msg::ShowInFiles => open_file(&self.entry.dir.join(refdir::ENTRY), true, root),
             // The trash is the undo
-            Msg::Trash => match gio::File::for_path(&self.entry.dir).trash(gio::Cancellable::NONE) {
-                Ok(()) => {
-                    self.toast(&sender, "Moved to the trash".into());
-                    sender.output(Output::Changed).ok();
-                }
-                Err(e) => self.toast(&sender, format!("Could not move to the trash: {e}")),
-            },
+            Msg::Trash => drop(sender.output(Output::Trash(self.entry.dir.clone()))),
         }
         self.update_view(widgets, sender);
     }
