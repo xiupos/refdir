@@ -49,6 +49,10 @@ Crates are renamed: `gtk` is gtk4 and `adw` is libadwaita. Check with `cargo tes
 - **Adding** (`refdir::add`) refuses the same paper (same `doi` or `eprint`), and makes the
   key free with `a`, `b`, … as INSPIRE does. INSPIRE's texkey is kept as it is; doi.org's key
   (`Takahashi_2006`) too.
+- **BibTeX is the other way in.** What INSPIRE and doi.org do not have (books, theses, notes) is
+  added from its BibTeX, as it is, under the rules of adding: `refdir add` takes a `.bib` file
+  or `-`, and the app's add dialog takes text starting with `@`. No form for a new entry: Edit
+  BibTeX does that. A `.bib` argument is one that names a file; a texkey never ends in `.bib`.
 - **Fetching.** INSPIRE answers BibTeX itself (`format=bibtex`), so there is no JSON. An
   identifier becomes INSPIRE's query (`fetch::query`): links to `recid:`, `arxiv:`, `doi:`;
   anything else as typed, since INSPIRE's search finds a bare arXiv number, DOI, or texkey.

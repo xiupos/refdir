@@ -1,7 +1,7 @@
 //! `refdir`: a library of references from the command line (`FORMAT.md`)
 
 use clap::{Parser, Subcommand};
-use refdir::{Entry, Library, fetch};
+use refdir::{Bib, Entry, Library, fetch};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -24,7 +24,7 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     /// Add the paper each identifier finds: an arXiv number or link, a DOI or link, a texkey, or an
-    /// INSPIRE link
+    /// INSPIRE link. A .bib file, or - for standard input, adds its entries as they are
     Add {
         #[arg(required = true)]
         ids: Vec<String>,
@@ -68,7 +68,16 @@ fn main() -> ExitCode {
     let result = match cli.command {
         Command::Add { ids, pdf } => {
             // Every one is tried, whether those before it were added or not
-            let added: Vec<bool> = ids.iter().map(|id| add(&cli.library, id, None, pdf)).collect();
+            let added: Vec<bool> = ids
+                .iter()
+                .map(|id| {
+                    if is_bib(id) {
+                        add_file(&cli.library, id, pdf)
+                    } else {
+                        add(&cli.library, id, None, pdf)
+                    }
+                })
+                .collect();
             Ok(added.iter().all(|&a| a))
         }
         Command::Bib { aux } => bib(&cli.library, library, aux.as_deref()),
@@ -115,16 +124,53 @@ fn list<'a>(entries: impl Iterator<Item = &'a Entry>) -> bool {
 /// did; why not goes to standard error
 fn add(folder: &Path, id: &str, key: Option<&str>, pdf: bool) -> bool {
     std::thread::sleep(PAUSE);
-    let added = fetch::find(id).and_then(|mut bib| {
-        if let Some(key) = key {
-            bib.key = key.to_owned();
+    match fetch::find(id) {
+        Ok(mut bib) => {
+            if let Some(key) = key {
+                bib.key = key.to_owned();
+            }
+            add_bib(folder, id, bib, pdf)
         }
-        refdir::add(folder, bib).map_err(|e| e.to_string())
-    });
-    let entry = match added {
-        Ok(entry) => entry,
         Err(e) => {
             eprintln!("refdir: {id}: {e}");
+            false
+        }
+    }
+}
+
+/// Whether an argument of `add` is BibTeX to read: `-`, or a `.bib` file
+fn is_bib(id: &str) -> bool {
+    id == "-" || id.to_ascii_lowercase().ends_with(".bib") && Path::new(id).is_file()
+}
+
+/// Adds every entry of a `.bib` file, or of standard input, as it is
+fn add_file(folder: &Path, path: &str, pdf: bool) -> bool {
+    let text = match path {
+        "-" => std::io::read_to_string(std::io::stdin()),
+        _ => std::fs::read_to_string(path),
+    };
+    match text.and_then(|t| Bib::parse(&t)) {
+        Ok(bibs) if bibs.is_empty() => {
+            eprintln!("refdir: {path}: it has no BibTeX entry");
+            false
+        }
+        // Every one is tried
+        Ok(bibs) => {
+            bibs.into_iter().map(|bib| add_bib(folder, &bib.key.clone(), bib, pdf)).fold(true, |a, b| a & b)
+        }
+        Err(e) => {
+            eprintln!("refdir: {path}: {e}");
+            false
+        }
+    }
+}
+
+/// Adds an entry for `bib`, and prints its folder; its PDF too, if asked. `what` names it in errors
+fn add_bib(folder: &Path, what: &str, bib: Bib, pdf: bool) -> bool {
+    let entry = match refdir::add(folder, bib) {
+        Ok(entry) => entry,
+        Err(e) => {
+            eprintln!("refdir: {what}: {e}");
             return false;
         }
     };
@@ -133,7 +179,7 @@ fn add(folder: &Path, id: &str, key: Option<&str>, pdf: bool) -> bool {
         && entry.bib.get("eprint").is_some()
         && let Err(e) = fetch::pdf(&entry)
     {
-        eprintln!("refdir: {id}: no PDF: {e}");
+        eprintln!("refdir: {what}: no PDF: {e}");
         return false;
     }
     true

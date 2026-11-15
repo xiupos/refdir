@@ -15,7 +15,8 @@
       it can be synced between devices.
     </p>
     <ul>
-      <li>Add papers from INSPIRE-HEP by their arXiv number, DOI, texkey, or link</li>
+      <li>Add papers from INSPIRE-HEP by their arXiv number, DOI, texkey, or link, and anything
+        else by its BibTeX</li>
       <li>Get their PDFs from arXiv, and keep other files with them</li>
       <li>Tag them and write notes</li>
       <li>Find entries as you type, by any word of their title, authors, tags, or notes</li>

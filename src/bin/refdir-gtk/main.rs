@@ -232,13 +232,16 @@ enum Msg {
     Exported(PathBuf),
     FocusSearch,
     Add,
-    /// What the user pasted to add
+    /// What the user typed or pasted to add: an identifier, or BibTeX
     Fetch(String),
+    /// BibTeX, to add as it is
+    Pasted(String),
 }
 
 #[derive(Debug)]
 enum Cmd {
-    Fetched(Result<Box<Bib>, String>),
+    /// The paper found, or the entries of the BibTeX pasted
+    Fetched(Result<Vec<Bib>, String>),
 }
 
 impl App {
@@ -705,7 +708,7 @@ impl Component for App {
                 }
                 let dialog = adw::AlertDialog::builder()
                     .heading("Add Paper")
-                    .body("An arXiv number, a DOI, a texkey, or an INSPIRE, arXiv, or doi.org link")
+                    .body("An arXiv number, a DOI, a texkey, or an INSPIRE, arXiv, or doi.org link; or BibTeX, pasted")
                     .extra_child(&field)
                     .build();
                 dialog.add_responses(&[("cancel", "_Cancel"), ("add", "_Add")]);
@@ -718,9 +721,16 @@ impl Component for App {
                 dialog.set_focus(Some(&field));
             }
             Msg::Fetch(id) => {
-                if !id.trim().is_empty() {
-                    sender.spawn_oneshot_command(move || Cmd::Fetched(fetch::find(&id).map(Box::new)));
+                if id.trim_start().starts_with('@') {
+                    sender.input(Msg::Pasted(id));
+                } else if !id.trim().is_empty() {
+                    sender.spawn_oneshot_command(move || Cmd::Fetched(fetch::find(&id).map(|b| vec![b])));
                 }
+            }
+            Msg::Pasted(text) => {
+                let bibs = Bib::parse(&text).map_err(|e| e.to_string());
+                self.update_cmd_with_view(widgets, Cmd::Fetched(bibs), sender.clone(), root);
+                return;
             }
         }
         self.update_view(widgets, sender);
@@ -735,12 +745,34 @@ impl Component for App {
     ) {
         let Cmd::Fetched(result) = cmd;
         let folder = self.folder.clone().unwrap_or_default();
-        match result.and_then(|bib| refdir::add(&folder, *bib).map_err(|e| e.to_string())) {
-            Ok(entry) => {
-                self.reload(widgets, &sender, false);
-                self.open(widgets, &entry.dir, &sender);
+        let bibs = match result {
+            Ok(bibs) if bibs.is_empty() => Err("It has no BibTeX entry".to_owned()),
+            other => other,
+        };
+        let bibs = match bibs {
+            Ok(bibs) => bibs,
+            Err(e) => return toast(&widgets.toasts, &e),
+        };
+        // Each is tried; the last added is opened, and the first refusal said
+        let (mut added, mut refused) = (Vec::new(), Vec::new());
+        for bib in bibs {
+            let key = bib.key.clone();
+            match refdir::add(&folder, bib) {
+                Ok(entry) => added.push(entry),
+                Err(e) => refused.push(format!("{key}: {e}")),
             }
-            Err(e) => toast(&widgets.toasts, &e),
+        }
+        self.reload(widgets, &sender, false);
+        if let Some(entry) = added.last() {
+            self.open(widgets, &entry.dir, &sender);
+        }
+        match (added.len(), refused.first()) {
+            (_, None) if added.len() > 1 => toast(&widgets.toasts, &format!("{} entries added", added.len())),
+            (0, Some(e)) if refused.len() == 1 => {
+                toast(&widgets.toasts, e.split_once(": ").map_or(e, |(_, m)| m))
+            }
+            (n, Some(e)) => toast(&widgets.toasts, &format!("{n} added, {} not: {e}", refused.len())),
+            _ => {}
         }
         self.update_view(widgets, sender);
     }

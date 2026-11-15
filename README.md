@@ -6,12 +6,14 @@ its BibTeX in `entry.bib` and its PDFs and other files beside it. The format is
 [tests/cases.json](tests/cases.json). Any program that reads a folder can read it, and any sync can carry it.
 
 Papers come from [INSPIRE-HEP](https://inspirehep.net) by their arXiv number, DOI, texkey, or
-link, or from doi.org for a DOI INSPIRE does not have; PDFs from arXiv.
+link, or from doi.org for a DOI INSPIRE does not have; PDFs from arXiv. Anything else is added
+as BibTeX: a book's from its publisher, a `.bib` from another program.
 
 ## The command
 
 ```
 refdir add 1207.7214 Maldacena:1997re 10.1103/PhysRevD.49.6587 --pdf
+refdir add books.bib              # its entries, as they are; - reads standard input
 refdir bib main.aux > refs.bib    # adds from INSPIRE the cited keys the library lacks
 refdir update                     # gets every entry again from INSPIRE
 refdir ls
@@ -26,7 +28,7 @@ not done, 2 when the command could not run.
 ## The apps
 
 `refdir-gtk`, for GNOME, and [RefdirApp](https://github.com/xiupos/RefdirApp), for iPhone and
-iPad: the library by tag, finding as you type, adding by identifier, an
+iPad: the library by tag, finding as you type, adding by identifier or pasted BibTeX, an
 entry's tags, note, and files, reading or getting its PDF, editing its BibTeX, and exporting a
 `.bib`.
 
