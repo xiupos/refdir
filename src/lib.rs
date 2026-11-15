@@ -152,10 +152,10 @@ impl Entry {
         files(names.collect()).into_iter().map(PathBuf::from).collect()
     }
 
-    /// The main file, the first by name, if it is a PDF
+    /// The first PDF of its files, by name
     pub fn pdf(&self) -> Option<PathBuf> {
-        let main = self.files().into_iter().next()?;
-        is_pdf(&main.to_string_lossy()).then(|| self.dir.join(main))
+        let pdf = self.files().into_iter().find(|f| is_pdf(&f.to_string_lossy()))?;
+        Some(self.dir.join(pdf))
     }
 
     /// Copies a file into the folder, named `name`, or with `-2`, `-3`, … before its extension if a
@@ -322,7 +322,7 @@ pub fn new_key(entries: &[Entry], folders: &[String], bib: &Bib) -> io::Result<S
 }
 
 /// An entry's files among the names in its folder: not `entry.bib`, not starting with `.`, by
-/// name. The first is the main file
+/// name
 pub fn files(mut names: Vec<String>) -> Vec<String> {
     names.retain(|n| n != ENTRY && !n.starts_with('.'));
     names.sort_by(|a, b| by_name(a, b));

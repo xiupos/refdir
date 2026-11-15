@@ -18,8 +18,9 @@ citation key, with one BibTeX entry in `entry.bib`:
   and is left alone.
 - **Tags** are `keywords`, separated by commas, each trimmed. **The note** is `comment`.
 - **Files** are the other files in the entry's folder, but those whose names start with `.`.
-  They are ordered by name, ignoring ASCII case. The **main file** is the first; if it is a
-  PDF, it is what "read" opens.
+  They are ordered by name, ignoring ASCII case. **The PDF** is the first of them whose name
+  ends with `.pdf`, ignoring ASCII case: what "read" opens, and what says the entry has its
+  paper. Other files, such as an EPUB of the same paper, are kept beside it.
 - **The same paper** is one with the same `doi` or the same `eprint`, ignoring ASCII case. A
   library holds it once.
 - **The library's `.bib`** is every `entry.bib`, in key order, separated by empty lines.

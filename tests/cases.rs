@@ -136,7 +136,7 @@ fn files() {
     for c in cases("files") {
         let files = refdir::files(strings(&c["names"]));
         assert_eq!(files, strings(&c["files"]), "{c}");
-        assert_eq!(files.first().is_some_and(|f| refdir::is_pdf(f)), c["pdf"] == true, "{c}");
+        assert_eq!(files.iter().find(|f| refdir::is_pdf(f)).map(String::as_str), c["pdf"].as_str(), "{c}");
     }
     for c in cases("free_names") {
         assert_eq!(refdir::free_name(s(&c["name"]), &strings(&c["taken"])), s(&c["free"]), "{c}");

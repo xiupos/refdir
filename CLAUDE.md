@@ -80,7 +80,7 @@ Crates are renamed: `gtk` is gtk4 and `adw` is libadwaita. Check with `cargo tes
 - **The library is watched** with `GFileMonitor`s on its folder and every folder in it, as a
   program makes an entry's folder before its `entry.bib`. A change reads the library again;
   the list is rebuilt only if what was read changed.
-- **The entry pane**: the main button is Read (the main file, a PDF), else Get PDF (from
+- **The entry pane**: the main button is Read (the first PDF), else Get PDF (from
   arXiv). The note is saved when it loses focus and when the app closes. Edit BibTeX takes
   exactly one entry, and keeps the folder's key.
 - **Settings** are GSettings (`net.xiupos.Refdir`: `folder`, else `$REFDIR`; `sort`). Meson
