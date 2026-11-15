@@ -37,7 +37,8 @@ Rust 1.88 or later. The app needs GTK 4.12 and libadwaita 1.8.
 ```
 cargo build --release                                     # both
 cargo build --release --no-default-features --features cli   # the command only
-meson setup build && meson install -C build               # both, with the app's desktop files
+meson setup build && meson compile -C build               # both, with the app's desktop files,
+sudo meson install -C build --no-rebuild                  # into /usr/local, where GNOME Shell finds its search
 ```
 
 ## See also
