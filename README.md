@@ -28,7 +28,7 @@ not done, 2 when the command could not run.
 The app, `refdir-gtk`, does the same for GNOME: the library by tag, finding as you type, adding
 by identifier or pasted BibTeX, an entry's tags, note, and files, reading or getting its PDF,
 editing its BibTeX, and exporting a `.bib`. Installed with Meson, it also answers GNOME Shell's
-search: an entry found there opens its PDF.
+search: an entry found there opens in the app.
 
 ## Building
 

@@ -1,6 +1,7 @@
 //! GNOME Shell's search of the library (`refdir-gtk --search-provider`): a service of its own, which
 //! D-Bus starts when Shell searches and which ends when unused, so that searching never makes the
-//! window. A result is an entry, by its key; choosing it opens its PDF, or else its folder
+//! window. A result is an entry, by its key. Choosing it shows it in the app, and "more" searches
+//! there: the app's actions `show-entry` and `search`, which D-Bus starts the app for
 
 use gtk::{gio, glib, prelude::*};
 use refdir::{Entry, Library};
@@ -29,7 +30,7 @@ pub fn run() -> glib::ExitCode {
         // The library as read when a search begins: narrowing it searches the same
         let library = Rc::new(RefCell::new(Library::default()));
         let app = app.downgrade();
-        let call = move |_: gio::DBusConnection,
+        let call = move |connection: gio::DBusConnection,
                          _: Option<&str>,
                          _: &str,
                          _: Option<&str>,
@@ -48,16 +49,15 @@ pub fn run() -> glib::ExitCode {
                 }
                 "GetResultMetas" => Some(metas(&library.borrow(), &strings(0)).to_variant()),
                 "ActivateResult" => {
-                    let key = params.child_value(0).get::<String>().unwrap_or_default();
-                    if let Some(entry) = library.borrow().find(&key) {
-                        let uri = gio::File::for_path(entry.pdf().unwrap_or(entry.dir.clone())).uri();
-                        let _ = gio::AppInfo::launch_default_for_uri(&uri, None::<&gio::AppLaunchContext>);
-                    }
+                    app_action(
+                        &connection,
+                        "show-entry",
+                        &params.child_value(0).get::<String>().unwrap_or_default(),
+                    );
                     None
                 }
                 _ => {
-                    // LaunchSearch: the app itself
-                    let _ = std::env::current_exe().and_then(|exe| std::process::Command::new(exe).spawn());
+                    app_action(&connection, "search", &strings(0).join(" "));
                     None
                 }
             };
@@ -70,6 +70,29 @@ pub fn run() -> glib::ExitCode {
             .expect("the search's object");
     });
     app.run_with_args(&["refdir-gtk"])
+}
+
+/// Activates an action of the app, with a text
+fn app_action(connection: &gio::DBusConnection, action: &str, text: &str) {
+    let params = (action, vec![text.to_variant()], HashMap::<String, glib::Variant>::new()).to_variant();
+    let (bus, path, interface) = (super::APP_ID, "/net/xiupos/Refdir", "org.freedesktop.Application");
+    let none = gio::Cancellable::NONE;
+    connection.call(
+        Some(bus),
+        path,
+        interface,
+        "ActivateAction",
+        Some(&params),
+        None,
+        gio::DBusCallFlags::NONE,
+        -1,
+        none,
+        |r| {
+            if let Err(e) = r {
+                eprintln!("refdir-gtk: cannot reach the app: {e}");
+            }
+        },
+    );
 }
 
 /// The library in the app's folder; none if it has none, or cannot be read
@@ -91,7 +114,6 @@ fn metas(library: &Library, keys: &[String]) -> Vec<HashMap<String, glib::Varian
         let name = Some(e.title()).filter(|t| !t.is_empty()).unwrap_or(e.key().to_owned());
         let about: Vec<String> =
             [e.byline()].into_iter().chain(e.year()).chain([e.key().to_owned()]).collect();
-        let icon = if e.pdf().is_some() { "application-pdf" } else { "folder" };
         HashMap::from([
             ("id".to_owned(), e.key().to_variant()),
             ("name".to_owned(), name.to_variant()),
@@ -99,7 +121,6 @@ fn metas(library: &Library, keys: &[String]) -> Vec<HashMap<String, glib::Varian
                 "description".to_owned(),
                 about.into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(", ").to_variant(),
             ),
-            ("gicon".to_owned(), icon.to_variant()),
         ])
     };
     keys.iter().filter_map(|k| library.find(k)).map(meta).collect()

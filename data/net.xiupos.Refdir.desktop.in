@@ -6,5 +6,6 @@ Exec=@bindir@/refdir-gtk
 Icon=net.xiupos.Refdir
 Terminal=false
 StartupNotify=true
+DBusActivatable=true
 Categories=Office;Education;GTK;
 Keywords=reference;bibliography;citation;bibtex;paper;library;doi;arxiv;inspire;

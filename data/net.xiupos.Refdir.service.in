@@ -1,0 +1,3 @@
+[D-BUS Service]
+Name=net.xiupos.Refdir
+Exec=@bindir@/refdir-gtk --gapplication-service

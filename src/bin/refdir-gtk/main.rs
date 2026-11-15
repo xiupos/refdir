@@ -318,6 +318,9 @@ enum Msg {
     Filter(String),
     /// A row of the list, by its place in what is shown
     Open(u32),
+    /// An entry, by its key, and the words to search for: from GNOME Shell's search
+    ShowEntry(String),
+    Search(String),
     Export,
     Exported(PathBuf),
     FocusSearch,
@@ -768,7 +771,7 @@ impl Component for App {
             ("tag-rename", Msg::RenameTag),
             ("tag-remove", Msg::RemoveTag),
         ];
-        for (name, msg) in row_actions {
+        let text_action = |name: &str, msg: ToMsg| {
             let action = gio::SimpleAction::new(name, Some(glib::VariantTy::STRING));
             let s = sender.clone();
             action.connect_activate(move |_, v| {
@@ -776,10 +779,14 @@ impl Component for App {
                     s.input(msg(v));
                 }
             });
-            group.add_action(&action);
-        }
+            action
+        };
+        row_actions.into_iter().for_each(|(name, msg)| group.add_action(&text_action(name, msg)));
         root.insert_action_group("win", Some(&group));
         let app = relm4::main_application();
+        // GNOME Shell's search (`search.rs`): an entry chosen there, or the words searched
+        app.add_action(&text_action("show-entry", Msg::ShowEntry));
+        app.add_action(&text_action("search", Msg::Search));
         app.set_accelerators_for_action::<AddAction>(&["<Control>n"]);
         app.set_accelerators_for_action::<SearchAction>(&["<Control>f"]);
         app.set_accelerators_for_action::<ChooseFolderAction>(&["<Control>o"]);
@@ -923,6 +930,20 @@ impl Component for App {
                 if let Some(dir) = self.list.get_visible(position).map(|e| e.borrow().entry.dir.clone()) {
                     self.open(widgets, &dir, &sender);
                 }
+            }
+            Msg::ShowEntry(key) => {
+                let dir = self.entries().find(|e| e.key().eq_ignore_ascii_case(&key)).map(|e| e.dir.clone());
+                match dir {
+                    Some(dir) => self.open(widgets, &dir, &sender),
+                    None => toast(&widgets.toasts, &format!("No entry has the key {key}")),
+                }
+                root.present();
+            }
+            Msg::Search(words) => {
+                widgets.places.select_row(widgets.places.row_at_index(0).as_ref());
+                sender.input(Msg::Place(0));
+                widgets.field.set_text(&words);
+                root.present();
             }
             Msg::Export => {
                 let tag = self.find.borrow().tag.clone();

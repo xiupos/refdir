@@ -31,7 +31,7 @@ command without GTK.
 | `src/bin/refdir-gtk/search.rs` | GNOME Shell's search (`--search-provider`) |
 | `tests/cases.json`, `tests/cases.rs` | The format's rules as examples, shared with other programs, a section each |
 | `tests/library.rs` | The rules that need folders, on temporary folders |
-| `data/`, `build.rs`, `meson.build` | Icons, desktop entry, metainfo, the settings schema |
+| `data/`, `build.rs`, `meson.build` | Icons, desktop entry, metainfo, the settings schema, D-Bus services, Shell's search provider |
 
 Crates are renamed: `gtk` is gtk4 and `adw` is libadwaita. Check with `cargo test`,
 `cargo clippy --all-targets`, and `cargo fmt`.
@@ -59,11 +59,11 @@ Crates are renamed: `gtk` is gtk4 and `adw` is libadwaita. Check with `cargo tes
   `size=2` tells one hit from many. A DOI INSPIRE does not have goes to doi.org, whose months
   (`June`) become BibTeX's macros (`jun`). `ureq`, one agent, 30 s; 5 minutes for a PDF.
   Errors are short sentences naming the host; the details go to stderr.
-- **Getting again** (`fetch::again`) asks INSPIRE by `eprint`, else `doi`, and keeps the key,
-  `keywords`, and `comment`: those are the user's, the rest is INSPIRE's. Never doi.org, and
-  refused if INSPIRE's lacks the title or every name the entry has (`fetch::kept`): doi.org's BibTeX dropped them,
-  for books and others. `refdir update` shows the fields that change (`refdir::changes`), and
-  writes only with `--write`: getting a whole library again at once was not safe.
+- **Getting again** (`fetch::again`) asks INSPIRE by `eprint`, else `doi`; never doi.org, whose
+  BibTeX may lack the title or the names. `fetch::kept` keeps the key, `keywords`, and `comment`:
+  those are the user's, the rest is INSPIRE's; and refuses BibTeX without the title, or every
+  name, that the entry has. `refdir update` shows the fields that change (`refdir::changes`), and
+  writes only with `--write`.
 - **Checking** (`refdir check`, `refdir::problems`) lists what the format forbids but a sync or a
   hand can make: a paper twice, keys the same ignoring case, an unreadable `entry.bib`, files
   Syncthing kept in a conflict (`.sync-conflict-` in the name), and a title or names missing.
@@ -116,13 +116,12 @@ Crates are renamed: `gtk` is gtk4 and `adw` is libadwaita. Check with `cargo tes
   `trash::orig-path` is the entry's folder and moves it back, as Files does, unless a folder is
   there again.
 - **GNOME Shell's search** is `refdir-gtk --search-provider`, a `gio::Application` of its own
-  (`net.xiupos.Refdir.SearchProvider`), started by D-Bus from the `.service` Meson installs:
-  relm4 makes the window at startup, which a search must not. It reads the library when a search
-  begins, narrows that, and ends 10 s after the last call. A result opens the PDF, or else the
-  folder; "more" opens the app. Try it without Shell: `dbus-run-session`, start it, and `gdbus
-  call --session --dest net.xiupos.Refdir.SearchProvider --object-path
-  /net/xiupos/Refdir/SearchProvider --method org.gnome.Shell.SearchProvider2.GetInitialResultSet
-  "['maldacena']"`.
+  (`net.xiupos.Refdir.SearchProvider`), so that searching never makes the window, which relm4
+  makes at startup. It reads the library when a search begins, narrows that, and ends 10 s after
+  the last call. A result chosen, and "more", are the app's actions `show-entry` and `search`,
+  through `org.freedesktop.Application`: the app is D-Bus activatable (`DBusActivatable`), so
+  that D-Bus starts it, as `--gapplication-service`, when it is not running, and an app running
+  takes them in its window.
 - **Toasts** have high priority, so that a new one replaces the one shown.
 
 ## Testing the app
@@ -150,6 +149,12 @@ Drive it with `xdotool`, and look with `DISPLAY=:99 import -window root /tmp/rv/
   (the variable before `dbus-run-session`, so that gvfs's trash has it too). A toast lasts 5
   seconds: click Undo in the same command that moves to the trash.
 - The file dialogs are the portal's, and hard to drive here: set the folder in the keyfile.
+- GNOME Shell's search, without Shell: put `.service` files naming `target/debug/refdir-gtk`
+  (`--gapplication-service`, `--search-provider`) in `$XDG_DATA_HOME/dbus-1/services`, give the
+  variables before `dbus-run-session`, as D-Bus starts the programs, and call the provider:
+  `gdbus call --session --dest net.xiupos.Refdir.SearchProvider --object-path
+  /net/xiupos/Refdir/SearchProvider --method org.gnome.Shell.SearchProvider2.ActivateResult
+  KEY "['word']" "uint32 0"` (`GetInitialResultSet "['word']"`, `LaunchSearch`).
 - Another `refdir-gtk` may be the user's own: stop only those whose environment has
   `DISPLAY=:99`.
 
