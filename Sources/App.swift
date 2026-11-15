@@ -167,17 +167,24 @@ final class Store {
         }
     }
 
-    /// Adds the paper an identifier finds. Its key, or nil if it was not added
+    /// Adds the paper an identifier finds, or the entries of BibTeX, as they are: what INSPIRE
+    /// and doi.org do not have. The key of the last added, or nil if none was
     func add(_ id: String) async -> String? {
         guard let folder else {
             choosingFolder = true
             return nil
         }
         do {
-            let bib = try await Fetch.find(id)
-            let entry = try await Task.detached { try addEntry(folder, bib) }.value
+            let bibs = id.hasPrefix("@") ? try Bib.parse(id) : [try await Fetch.find(id)]
+            guard !bibs.isEmpty else { throw Failure("It has no BibTeX entry.") }
+            let (added, refused) = await Task.detached { addEntries(folder, bibs) }.value
             await reload()
-            return entry.key
+            if let first = refused.first {
+                error = added.isEmpty && refused.count == 1
+                    ? first.why
+                    : "\(added.count) added, \(refused.count) not. \(first.key): \(first.why)"
+            }
+            return added.last?.key
         } catch {
             self.error = message(error, "the entry")
             return nil
@@ -401,13 +408,13 @@ private struct EntryList: View {
             }
         }
         .alert("Add a Paper", isPresented: $adding) {
-            TextField("arXiv number, DOI, or texkey", text: $identifier)
+            TextField("arXiv number, DOI, texkey, or BibTeX", text: $identifier)
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
             Button("Cancel", role: .cancel) {}
             Button("Add") { add() }
         } message: {
-            Text("From INSPIRE, or from doi.org for a DOI INSPIRE does not have.")
+            Text("From INSPIRE, or from doi.org for a DOI INSPIRE does not have. Anything else: paste its BibTeX.")
         }
     }
 

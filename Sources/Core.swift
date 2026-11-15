@@ -464,6 +464,20 @@ func sortEntries(_ entries: [Entry], by order: Order) -> [Entry] {
     entries.map { (SortKey($0, order), $0) }.sorted { $0.0 < $1.0 }.map(\.1)
 }
 
+/// Adds an entry for each, as `addEntry`: those added, and why the others were not, by key
+func addEntries(_ folder: URL, _ bibs: [Bib]) -> (added: [Entry], refused: [(key: String, why: String)]) {
+    var added: [Entry] = []
+    var refused: [(key: String, why: String)] = []
+    for bib in bibs {
+        do {
+            added.append(try addEntry(folder, bib))
+        } catch {
+            refused.append((bib.key, error.localizedDescription))
+        }
+    }
+    return (added, refused)
+}
+
 /// Every tag of the entries, by name, with how many have it
 func tagCounts(_ entries: [Entry]) -> [(tag: String, count: Int)] {
     var counts: [(tag: String, count: Int)] = []
@@ -1130,6 +1144,11 @@ enum Tests {
         check(added.pdf()?.lastPathComponent == "paper-2.PDF", "pdf")
         let left = try! fm.contentsOfDirectory(atPath: added.dir.path).filter { $0.hasPrefix(".") }
         check(left.isEmpty, "no temporary files: \(left)")
+
+        let pasted = try! Bib.parse("@book{W:1995, title = {QFT}} @misc{Twice, doi = {10.1/X}}")
+        let (some, refused) = addEntries(lib, pasted)
+        check(some.map(\.key) == ["W:1995"], "BibTeX added")
+        check(refused.map(\.key) == ["Twice"] && refused[0].why == "The library has it, as minea.", "refused: \(refused)")
 
         let doi = normalizeMonths(try! Bib.parse("@article{T_2006, month = June, year = 2006}")[0])
         check(doi.get("month") == "jun", "doi.org's month")
