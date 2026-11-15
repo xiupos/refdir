@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <!-- A folder of reference cards, one with a bookmark -->
+  <path d="M12 26a8 8 0 0 1 8-8h28l10 10h50a8 8 0 0 1 8 8v68a8 8 0 0 1-8 8H20a8 8 0 0 1-8-8z" fill="#1a5fb4"/>
+  <rect x="24" y="30" width="72" height="56" rx="4" fill="#deddda" transform="rotate(-6 60 58)"/>
+  <rect x="30" y="34" width="72" height="56" rx="4" fill="#f6f5f4"/>
+  <rect x="40" y="44" width="40" height="5" rx="2.5" fill="#9a9996"/>
+  <rect x="40" y="54" width="30" height="5" rx="2.5" fill="#9a9996"/>
+  <path d="M86 34h10v24l-5-4-5 4z" fill="#e01b24"/>
+  <path d="M12 72a8 8 0 0 1 8-8h88a8 8 0 0 1 8 8v32a8 8 0 0 1-8 8H20a8 8 0 0 1-8-8z" fill="#3584e4"/>
+</svg>

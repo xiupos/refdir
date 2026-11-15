@@ -1,0 +1,391 @@
+//! A refdir library (`FORMAT.md`): a folder of entries, each a folder named by its citation key
+//! with one BibTeX entry in `entry.bib`. Reading and writing entries, finding them, and the
+//! library's `.bib`
+
+pub mod aux;
+pub mod fetch;
+
+use biblatex::{RawBibliography, RawChunk};
+use std::cmp::Ordering;
+use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
+use std::{fs, io};
+
+/// The file of an entry's BibTeX
+pub const ENTRY: &str = "entry.bib";
+
+/// A part of a field's value: text, written in braces, or a macro, such as `jun`
+#[derive(Debug, Clone, PartialEq)]
+pub enum Chunk {
+    Text(String),
+    Macro(String),
+}
+
+/// One BibTeX entry, its fields in their order and their values as written
+#[derive(Debug, Clone, PartialEq)]
+pub struct Bib {
+    pub kind: String,
+    pub key: String,
+    pub fields: Vec<(String, Vec<Chunk>)>,
+}
+
+impl Bib {
+    /// The entries of a BibTeX text
+    pub fn parse(text: &str) -> io::Result<Vec<Bib>> {
+        let raw = RawBibliography::parse(text).map_err(|e| invalid(format!("not BibTeX: {e}")))?;
+        let chunk = |c: &RawChunk| match c {
+            RawChunk::Normal(s) => Chunk::Text((*s).to_owned()),
+            RawChunk::Abbreviation(s) => Chunk::Macro((*s).to_owned()),
+        };
+        let bib = |e: &biblatex::RawEntry| Bib {
+            kind: e.kind.v.to_lowercase(),
+            key: e.key.v.to_owned(),
+            fields: e
+                .fields
+                .iter()
+                .map(|p| (p.key.v.to_owned(), p.value.v.iter().map(|c| chunk(&c.v)).collect()))
+                .collect(),
+        };
+        Ok(raw.entries.iter().map(|e| bib(&e.v)).collect())
+    }
+
+    /// A field's value as written, its macros by name; `None` if it is missing or blank
+    pub fn get(&self, name: &str) -> Option<String> {
+        let (_, chunks) = self.fields.iter().find(|(n, _)| n.eq_ignore_ascii_case(name))?;
+        let text: String = chunks
+            .iter()
+            .map(|c| match c {
+                Chunk::Text(t) | Chunk::Macro(t) => t.as_str(),
+            })
+            .collect();
+        Some(text.trim().to_owned()).filter(|t| !t.is_empty())
+    }
+
+    /// Sets a field to a text, in its place or at the end; an empty text removes it
+    pub fn set(&mut self, name: &str, value: &str) {
+        let at = self.fields.iter().position(|(n, _)| n.eq_ignore_ascii_case(name));
+        match (at, value.trim().is_empty()) {
+            (Some(i), true) => drop(self.fields.remove(i)),
+            (Some(i), false) => self.fields[i].1 = vec![Chunk::Text(value.to_owned())],
+            (None, false) => self.fields.push((name.to_owned(), vec![Chunk::Text(value.to_owned())])),
+            (None, true) => {}
+        }
+    }
+
+    /// The entry as BibTeX, one field a line, ending with a line break
+    pub fn to_bibtex(&self) -> String {
+        let value = |chunks: &[Chunk]| {
+            let parts: Vec<String> = chunks
+                .iter()
+                .map(|c| match c {
+                    Chunk::Text(t) => format!("{{{t}}}"),
+                    Chunk::Macro(m) => m.clone(),
+                })
+                .collect();
+            parts.join(" # ")
+        };
+        let fields: String = self.fields.iter().map(|(n, v)| format!("    {n} = {},\n", value(v))).collect();
+        format!("@{}{{{},\n{fields}}}\n", self.kind, self.key)
+    }
+}
+
+/// Whether a citation key can be an entry's: no white space, none of `, { } " # % \ /`, and not
+/// starting with `.`
+pub fn is_key(key: &str) -> bool {
+    !key.is_empty()
+        && !key.starts_with('.')
+        && !key.chars().any(|c| c.is_whitespace() || ",{}\"#%\\/".contains(c))
+}
+
+/// An entry: its folder, whose name is its key, and its BibTeX
+#[derive(Debug, Clone, PartialEq)]
+pub struct Entry {
+    pub dir: PathBuf,
+    pub bib: Bib,
+}
+
+impl Entry {
+    /// Reads the entry in `dir`. Its key is the folder's name, whatever `entry.bib` has
+    pub fn read(dir: &Path) -> io::Result<Entry> {
+        let text = fs::read_to_string(dir.join(ENTRY))?;
+        let mut bibs = Bib::parse(&text)?;
+        if bibs.len() != 1 {
+            return Err(invalid(format!("{ENTRY} has {} entries, not one", bibs.len())));
+        }
+        let mut bib = bibs.remove(0);
+        bib.key = name(dir);
+        Ok(Entry { dir: dir.to_owned(), bib })
+    }
+
+    pub fn key(&self) -> &str {
+        &self.bib.key
+    }
+
+    /// Writes `entry.bib`, through a `.` file in the folder
+    pub fn write(&self) -> io::Result<()> {
+        write_atomic(&self.dir.join(ENTRY), self.bib.to_bibtex().as_bytes())
+    }
+
+    /// `keywords`, split at commas
+    pub fn tags(&self) -> Vec<String> {
+        let keywords = self.bib.get("keywords").unwrap_or_default();
+        keywords.split(',').map(str::trim).filter(|t| !t.is_empty()).map(str::to_owned).collect()
+    }
+
+    pub fn set_tags(&mut self, tags: &[String]) {
+        self.bib.set("keywords", &tags.join(", "));
+    }
+
+    /// `comment`
+    pub fn note(&self) -> String {
+        self.bib.get("comment").unwrap_or_default()
+    }
+
+    pub fn set_note(&mut self, note: &str) {
+        self.bib.set("comment", note);
+    }
+
+    /// The other files of the folder, but those starting with `.`, by name
+    pub fn files(&self) -> Vec<PathBuf> {
+        let names = fs::read_dir(&self.dir).into_iter().flatten().flatten().map(|e| e.file_name());
+        let mut files: Vec<PathBuf> = names
+            .filter(|n| n != ENTRY && !n.to_string_lossy().starts_with('.'))
+            .map(PathBuf::from)
+            .filter(|n| self.dir.join(n).is_file())
+            .collect();
+        files.sort_by(|a, b| by_name(&a.to_string_lossy(), &b.to_string_lossy()));
+        files
+    }
+
+    /// The main file, the first by name, if it is a PDF
+    pub fn pdf(&self) -> Option<PathBuf> {
+        let main = self.files().into_iter().next()?;
+        main.extension().is_some_and(|x| x.eq_ignore_ascii_case("pdf")).then(|| self.dir.join(main))
+    }
+
+    /// Copies a file into the folder, named `name`, or with `-2`, `-3`, … before its extension if a
+    /// file there has that name, ignoring ASCII case. Returns its path
+    pub fn add_file(&self, name: &str, data: &[u8]) -> io::Result<PathBuf> {
+        let name = name.trim_start_matches('.');
+        let (stem, ext) = match name.rsplit_once('.') {
+            Some((stem, ext)) if !stem.is_empty() => (stem, format!(".{ext}")),
+            _ => (name, String::new()),
+        };
+        let taken: Vec<String> = fs::read_dir(&self.dir)?
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().to_ascii_lowercase())
+            .collect();
+        let mut names = std::iter::once(name.to_owned()).chain((2..).map(|i| format!("{stem}-{i}{ext}")));
+        let path = self.dir.join(names.find(|n| !taken.contains(&n.to_ascii_lowercase())).unwrap());
+        write_atomic(&path, data)?;
+        Ok(path)
+    }
+
+    /// The title as plain text
+    pub fn title(&self) -> String {
+        self.bib.get("title").map(|t| plain(&t)).unwrap_or_default()
+    }
+
+    /// The authors, or else the editors, by their short names: `J.M. Maldacena`. `others` is not
+    /// one
+    pub fn names(&self) -> Vec<String> {
+        let list = self.bib.get("author").or_else(|| self.bib.get("editor")).unwrap_or_default();
+        split_and(&list).into_iter().filter(|n| *n != "others").map(short_name).collect()
+    }
+
+    /// The first author's short name, and ` et al.` if there are more
+    pub fn byline(&self) -> String {
+        let list = self.bib.get("author").or_else(|| self.bib.get("editor")).unwrap_or_default();
+        let names = split_and(&list);
+        let first = names.first().map(|n| short_name(n)).unwrap_or_default();
+        if names.len() > 1 { format!("{first} et al.") } else { first }
+    }
+
+    pub fn year(&self) -> Option<String> {
+        let date = self.bib.get("date").map(|d| d.chars().take(4).collect());
+        self.bib.get("year").or(date)
+    }
+
+    /// What finding looks in, folded: the title, the names, the key, the journal, the year, the
+    /// tags, and the note
+    pub fn search_text(&self) -> String {
+        let fields =
+            ["title", "author", "editor", "journal", "booktitle", "doi", "eprint", "keywords", "comment"];
+        let mut text: Vec<String> = fields.iter().filter_map(|f| self.bib.get(f)).collect();
+        text.extend([self.title(), self.names().join(" "), self.key().to_owned()]);
+        text.extend(self.year());
+        fold(&text.join("\n"))
+    }
+
+    /// Whether every word of `search`, folded, is in its text
+    pub fn matches(&self, search: &str) -> bool {
+        let text = self.search_text();
+        fold(search).split_whitespace().all(|w| text.contains(w))
+    }
+}
+
+/// A library's entries, by key, and the folders with an `entry.bib` that cannot be read
+#[derive(Debug, Default)]
+pub struct Library {
+    pub entries: Vec<Entry>,
+    pub unreadable: Vec<(PathBuf, io::Error)>,
+}
+
+impl Library {
+    pub fn read(folder: &Path) -> io::Result<Library> {
+        let mut library = Library::default();
+        for e in fs::read_dir(folder)? {
+            let dir = e?.path();
+            if name(&dir).starts_with('.') || !dir.join(ENTRY).is_file() {
+                continue;
+            }
+            match Entry::read(&dir) {
+                Ok(entry) => library.entries.push(entry),
+                Err(e) => library.unreadable.push((dir, e)),
+            }
+        }
+        library.entries.sort_by(|a, b| by_name(a.key(), b.key()));
+        Ok(library)
+    }
+
+    /// The entry with a key, ignoring ASCII case
+    pub fn find(&self, key: &str) -> Option<&Entry> {
+        self.entries.iter().find(|e| e.key().eq_ignore_ascii_case(key))
+    }
+
+    /// The entry that is the same paper as `bib`: by its DOI, or its arXiv number
+    pub fn same(&self, bib: &Bib) -> Option<&Entry> {
+        let same = |f: &str| {
+            let value = bib.get(f)?;
+            self.entries.iter().find(|e| e.bib.get(f).is_some_and(|v| v.eq_ignore_ascii_case(&value)))
+        };
+        same("doi").or_else(|| same("eprint"))
+    }
+}
+
+/// Every tag of the entries, by name, with how many have it
+pub fn tags<'a>(entries: impl IntoIterator<Item = &'a Entry>) -> Vec<(String, usize)> {
+    let mut tags: Vec<(String, usize)> = Vec::new();
+    for tag in entries.into_iter().flat_map(Entry::tags) {
+        match tags.iter_mut().find(|(t, _)| *t == tag) {
+            Some((_, n)) => *n += 1,
+            None => tags.push((tag, 1)),
+        }
+    }
+    tags.sort_by(|(a, _), (b, _)| by_name(a, b));
+    tags
+}
+
+/// Adds an entry to the library for `bib`, by its key, or with `a`, `b`, … after it if an entry has
+/// it. Refuses a paper the library has (`Library::same`)
+pub fn add(folder: &Path, mut bib: Bib) -> io::Result<Entry> {
+    let library = Library::read(folder)?;
+    if let Some(entry) = library.same(&bib) {
+        return Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            format!("the library has it, as {}", entry.key()),
+        ));
+    }
+    if !is_key(&bib.key) {
+        return Err(invalid(format!("{:?} cannot be a key", bib.key)));
+    }
+    let keys = std::iter::once(bib.key.clone()).chain(('a'..='z').map(|c| format!("{}{c}", bib.key)));
+    let free = |k: &String| library.find(k).is_none() && !folder.join(k).exists();
+    bib.key = keys.into_iter().find(free).ok_or_else(|| invalid("no free key".into()))?;
+    let dir = folder.join(&bib.key);
+    fs::create_dir(&dir)?;
+    let entry = Entry { dir, bib };
+    entry.write()?;
+    Ok(entry)
+}
+
+/// The `.bib` of entries, in their order, separated by empty lines
+pub fn bibtex<'a>(entries: impl IntoIterator<Item = &'a Entry>) -> String {
+    entries.into_iter().map(|e| e.bib.to_bibtex()).collect::<Vec<_>>().join("\n")
+}
+
+/// Writes a file through a `.` file next to it, then a rename
+pub fn write_atomic(path: &Path, data: &[u8]) -> io::Result<()> {
+    let tmp = path.with_file_name(format!(".{}.{}.tmp", name(path), std::process::id()));
+    fs::write(&tmp, data)?;
+    fs::rename(&tmp, path).inspect_err(|_| drop(fs::remove_file(&tmp)))
+}
+
+fn name(path: &Path) -> String {
+    path.file_name().unwrap_or_default().to_string_lossy().into_owned()
+}
+
+fn invalid(message: String) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidData, message)
+}
+
+/// Names in order: ASCII letters in lower case, then by code point
+fn by_name(a: &str, b: &str) -> Ordering {
+    a.to_ascii_lowercase().cmp(&b.to_ascii_lowercase()).then_with(|| a.cmp(b))
+}
+
+/// The names of a BibTeX name list, split at ` and ` outside braces
+fn split_and(list: &str) -> Vec<&str> {
+    let (mut names, mut depth, mut start) = (Vec::new(), 0, 0);
+    let bytes = list.as_bytes();
+    for (i, &b) in bytes.iter().enumerate() {
+        match b {
+            b'{' => depth += 1,
+            b'}' => depth -= 1,
+            _ if depth == 0 && bytes[i..].len() > 5 && bytes[i..i + 5].eq_ignore_ascii_case(b" and ") => {
+                names.push(list[start..i].trim());
+                start = i + 5;
+            }
+            _ => {}
+        }
+    }
+    names.push(list[start..].trim());
+    names.into_iter().filter(|n| !n.is_empty()).collect()
+}
+
+/// `Maldacena, Juan Martin` → `J.M. Maldacena`; `Juan Maldacena` → `J. Maldacena`; a name in
+/// braces, such as `{ATLAS Collaboration}`, as it is
+fn short_name(name: &str) -> String {
+    if name.starts_with('{') && name.ends_with('}') {
+        return plain(name);
+    }
+    let (family, given) = match name.split_once(',') {
+        Some((family, given)) => (family.trim(), given.trim()),
+        None => name.rsplit_once(' ').map_or((name, ""), |(given, family)| (family, given)),
+    };
+    let initial = |w: &str| {
+        w.split('-').filter_map(|p| p.chars().next()).map(|c| format!("{c}.")).collect::<Vec<_>>().join("-")
+    };
+    let initials: String = given.split_whitespace().map(initial).collect();
+    let family = plain(family);
+    if initials.is_empty() { family } else { format!("{initials} {family}") }
+}
+
+/// TeX as plain text: `{The Large $N$ limit}` → `The Large N limit`, `$H\to\gamma\gamma$` → `H→γγ`.
+/// An odd `$` is a dollar, not math
+pub fn plain(tex: &str) -> String {
+    static TEX: LazyLock<techxt::Converter> = LazyLock::new(|| {
+        use techxt::convert::{FontStyle, MathMode};
+        let builder = techxt::Converter::builder().math_mode(MathMode::Plain).wrap_width(None);
+        // Upright letters: `x`, not `𝑥`
+        builder.text_font(FontStyle::Disabled).math_font(FontStyle::Disabled).build().unwrap()
+    });
+    let bare = |i: usize| !tex[..i].ends_with('\\');
+    let dollars: Vec<usize> = tex.match_indices('$').map(|(i, _)| i).filter(|&i| bare(i)).collect();
+    let odd = dollars.last().filter(|_| dollars.len() % 2 == 1);
+    let mut escaped = String::new();
+    for (i, c) in tex.char_indices() {
+        if Some(&i) == odd {
+            escaped.push('\\');
+        }
+        escaped.push(c);
+    }
+    let text = TEX.latex_to_text(&escaped).map_or(escaped, |c| c.text);
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// For finding: decomposed, without combining marks, in lower case (`Gürsey` → `gursey`)
+pub fn fold(text: &str) -> String {
+    use unicode_normalization::{UnicodeNormalization, char::is_combining_mark};
+    text.nfd().filter(|c| !is_combining_mark(*c)).collect::<String>().to_lowercase()
+}

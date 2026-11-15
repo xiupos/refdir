@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>net.xiupos.Refdir</id>
+  <name>refdir</name>
+  <summary>Keep a library of references as a folder of files</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <developer id="net.xiupos">
+    <name>xiupos</name>
+  </developer>
+  <description>
+    <p>
+      refdir keeps your references in a folder you choose: one folder per entry, named by its
+      citation key, with its BibTeX and its files. The refdir command opens the same folder, and
+      it can be synced between devices.
+    </p>
+    <ul>
+      <li>Add papers from INSPIRE-HEP by their arXiv number, DOI, texkey, or link</li>
+      <li>Get their PDFs from arXiv, and keep other files with them</li>
+      <li>Tag them and write notes</li>
+      <li>Find entries as you type, by any word of their title, authors, tags, or notes</li>
+      <li>Copy an entry's BibTeX, edit it, or export a tag's entries as a .bib file</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">net.xiupos.Refdir.desktop</launchable>
+  <url type="homepage">https://github.com/xiupos/refdir</url>
+  <url type="bugtracker">https://github.com/xiupos/refdir/issues</url>
+  <url type="vcs-browser">https://github.com/xiupos/refdir</url>
+  <content_rating type="oars-1.1"/>
+  <requires>
+    <display_length compare="ge">360</display_length>
+  </requires>
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+    <control>touch</control>
+  </supports>
+  <releases>
+    <release version="0.2.0" date="2026-11-15"/>
+  </releases>
+</component>

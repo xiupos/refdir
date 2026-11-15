@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=refdir
+Comment=Keep a library of references as a folder of files
+Exec=@bindir@/refdir-gtk
+Icon=net.xiupos.Refdir
+Terminal=false
+StartupNotify=true
+Categories=Office;Education;GTK;
+Keywords=reference;bibliography;citation;bibtex;paper;library;doi;arxiv;inspire;

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="net.xiupos.Refdir" path="/net/xiupos/Refdir/">
+    <key name="folder" type="s">
+      <default>""</default>
+      <summary>Library folder</summary>
+      <description>The library shown. Empty: $REFDIR, if it is set.</description>
+    </key>
+  </schema>
+</schemalist>
