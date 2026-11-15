@@ -95,12 +95,18 @@ Everything that imports SwiftUI needs the iPad.
 - **PDFs** open with Quick Look (`PDFReader`, a `QLPreviewController` presented from UIKit, since
   `quickLookPreview` cannot allow editing), which saves markup into the file itself
   (`.updateContents`); the library is then read again. Other files open with it too. Share PDF is
-  how a PDF opens in another app: iOS has no default app for PDFs.
+  how a PDF opens in another app: iOS has no default app for PDFs. Opened from the list, Quick
+  Look has the list's PDFs (`items`), the one opened first, so that a swipe goes on to the PDFs
+  before and after it; entries without one are passed over.
 - **Adding** takes an identifier, or BibTeX (text starting with `@`), added as it is under the
   rules of adding (`addEntries`), for what INSPIRE and doi.org do not have. It is the alert's
   one-line field: BibTeX reads the same whether pasted line breaks are kept or made spaces.
 - **Menus on rows** (long press, or a right click on an iPad): an entry's Read, Share PDF, Copy
-  Key, Copy BibTeX, and Delete, so that a key is copied while writing without opening its entry;
+  Key, Copy BibTeX, and Delete, so that a key is copied while writing without opening its entry,
+  with its PDF's first page over them (`FirstPage`, PDFKit's thumbnail, made only when the menu
+  shows it), as Files shows a file. A tap on it only closes the menu: SwiftUI's preview has no
+  action. A swipe to the left deletes, after asking; nothing is to the right, where a swipe goes
+  back to the places;
   a tag's Rename and Remove (`Store.retag`, refdir's `rename_tag`: a name some have already
   merges the two; the place follows its tag). Copy Key and Copy BibTeX are on the entry's page
   too, whose buttons are on one line where they fit, else on two (`ViewThatFits`).

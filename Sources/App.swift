@@ -2,6 +2,7 @@
 // adding, exporting, and the entries in Spotlight
 
 import CoreSpotlight
+import PDFKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -417,20 +418,20 @@ private struct EntryList: View {
         @Bindable var store = store
         let shown = inPlace.filter { hasWords($0.text, search) }
         List(shown, selection: $selection) { row in
-            EntryRow(row: row)
-                .tag(row.id)
-                // What the entry's page does most, without opening it: the key while writing
-                .contextMenu {
-                    if let pdf = row.pdf {
-                        Button("Read", systemImage: "book") { reading = pdf }
-                        ShareLink(item: pdf) { Label("Share PDF", systemImage: "square.and.arrow.up") }
-                    }
-                    Button("Copy Key", systemImage: "doc.on.doc") { UIPasteboard.general.string = row.entry.key }
-                    Button("Copy BibTeX", systemImage: "doc.on.clipboard") {
-                        UIPasteboard.general.string = row.entry.bib.bibtex
-                    }
-                    Button("Delete…", systemImage: "trash", role: .destructive) { deleting = row.entry }
+            Group {
+                // With a PDF, its first page over the menu, as Files shows a file's
+                if let pdf = row.pdf {
+                    EntryRow(row: row).contextMenu { menu(row) } preview: { FirstPage(url: pdf) }
+                } else {
+                    EntryRow(row: row).contextMenu { menu(row) }
                 }
+            }
+            .tag(row.id)
+            // Only to the left: a swipe to the right goes back to the places
+            .swipeActions(edge: .trailing) {
+                Button("Delete…", systemImage: "trash") { deleting = row.entry }
+                    .tint(.red)
+            }
         }
         .overlay {
             if store.folder == nil {
@@ -449,7 +450,8 @@ private struct EntryList: View {
                 ContentUnavailableView.search(text: search)
             }
         }
-        .background { PDFReader(url: $reading) { store.refresh() } }
+        // A swipe in Quick Look goes on to the PDFs before and after in the list
+        .background { PDFReader(url: $reading, items: shown.compactMap(\.pdf)) { store.refresh() } }
         .confirmationDialog("Delete \(deleting?.key ?? "")?",
                             isPresented: Binding { deleting != nil } set: { if !$0 { deleting = nil } },
                             titleVisibility: .visible) {
@@ -508,6 +510,40 @@ private struct EntryList: View {
                 selection = key
             }
             fetching = false
+        }
+    }
+}
+
+/// The menu of a row: what the entry's page does most, without opening it, as the key while writing
+extension EntryList {
+    @ViewBuilder
+    func menu(_ row: Row) -> some View {
+        if let pdf = row.pdf {
+            Button("Read", systemImage: "book") { reading = pdf }
+            ShareLink(item: pdf) { Label("Share PDF", systemImage: "square.and.arrow.up") }
+        }
+        Button("Copy Key", systemImage: "doc.on.doc") { UIPasteboard.general.string = row.entry.key }
+        Button("Copy BibTeX", systemImage: "doc.on.clipboard") {
+            UIPasteboard.general.string = row.entry.bib.bibtex
+        }
+        Button("Delete…", systemImage: "trash", role: .destructive) { deleting = row.entry }
+    }
+}
+
+/// A PDF's first page, made when the menu shows it: its body is not made before
+private struct FirstPage: View {
+    let url: URL
+
+    var body: some View {
+        if let page = PDFDocument(url: url)?.page(at: 0)?.thumbnail(of: CGSize(width: 600, height: 800), for: .mediaBox) {
+            Image(uiImage: page)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 300)
+        } else {
+            Image(systemName: "doc.richtext")
+                .font(.largeTitle)
+                .padding(40)
         }
     }
 }

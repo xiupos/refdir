@@ -257,6 +257,8 @@ private struct BibEditor: View {
 /// cannot allow editing
 struct PDFReader: UIViewControllerRepresentable {
     @Binding var url: URL?
+    /// The files a swipe goes through, `url` among them: the list's PDFs. Only `url` if it is not
+    var items: [URL] = []
     /// Called when the markup has been saved
     let saved: () -> Void
 
@@ -267,10 +269,12 @@ struct PDFReader: UIViewControllerRepresentable {
     func updateUIViewController(_ host: UIViewController, context: Context) {
         context.coordinator.parent = self
         guard let url, host.presentedViewController == nil else { return }
-        context.coordinator.url = url
+        let items = items.contains(url) ? items : [url]
+        context.coordinator.items = items
         let preview = QLPreviewController()
         preview.dataSource = context.coordinator
         preview.delegate = context.coordinator
+        preview.currentPreviewItemIndex = items.firstIndex(of: url) ?? 0
         host.present(preview, animated: true)
     }
 
@@ -283,19 +287,18 @@ struct PDFReader: UIViewControllerRepresentable {
     final class Coordinator: NSObject, QLPreviewControllerDataSource,
                              @preconcurrency QLPreviewControllerDelegate {
         var parent: PDFReader
-        var url: URL?
+        var items: [URL] = []
 
         init(_ parent: PDFReader) {
             self.parent = parent
         }
 
         func numberOfPreviewItems(in controller: QLPreviewController) -> Int {
-            url == nil ? 0 : 1
+            items.count
         }
 
-        // Asked only while there is a URL: see `numberOfPreviewItems`
         func previewController(_ controller: QLPreviewController, previewItemAt index: Int) -> QLPreviewItem {
-            url! as NSURL
+            items[index] as NSURL
         }
 
         func previewController(_ controller: QLPreviewController,
@@ -308,6 +311,7 @@ struct PDFReader: UIViewControllerRepresentable {
         }
 
         func previewControllerDidDismiss(_ controller: QLPreviewController) {
+            items = []
             parent.url = nil
         }
     }
