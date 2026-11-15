@@ -318,3 +318,46 @@ fn create_refuses_what_check_would() {
     assert!(String::from_utf8_lossy(&out.stderr).contains("/csl/type"));
     assert_eq!(fs::read_dir(lib.path()).unwrap().count(), before);
 }
+
+#[test]
+fn create_many_with_keys_made_and_dois_free() {
+    let lib = library();
+    let items = lib.path().join(".items.json");
+    // Two items without a key, one with a key BibTeX cannot have, and one whose DOI is taken
+    let csl = r#"[
+        { "type": "book", "title": "The TeXbook", "author": [{ "family": "Knuth", "given": "Donald E." }], "issued": { "date-parts": [[1984]] } },
+        { "id": "http://zotero.org/items/X", "type": "book", "title": "TAOCP", "author": [{ "family": "Knuth" }], "issued": { "date-parts": [[1984]] } }
+    ]"#;
+    fs::write(&items, csl).unwrap();
+    let out = refdir(lib.path(), &["create", items.to_str().unwrap()]);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(stdout(&out).ends_with("Knuth-1984a\n"));
+    for name in ["Knuth-1984", "Knuth-1984a"] {
+        assert!(lib.path().join(name).join("entry.json").is_file(), "{name}");
+    }
+
+    // The Maldacena example's DOI, in another case: nothing is written
+    let taken = r#"[{ "type": "book", "title": "New" }, { "type": "article", "title": "Again", "DOI": "10.4310/atmp.1998.V2.n2.a1" }]"#;
+    fs::write(&items, taken).unwrap();
+    let before = fs::read_dir(lib.path()).unwrap().count();
+    let out = refdir(lib.path(), &["create", items.to_str().unwrap()]);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("item 2: "));
+    assert_eq!(fs::read_dir(lib.path()).unwrap().count(), before);
+}
+
+#[test]
+fn create_cleans_what_doi_org_gives() {
+    let lib = library();
+    let item = lib.path().join(".item.json");
+    let crossref = r#"{ "id": "https://doi.org/10.1/x", "type": "journal-article", "title": "T", "ISSN": ["0556-2821"],
+        "author": [{ "family": "Doe", "given": "J.", "sequence": "first" }], "issued": { "date-parts": [[2001]] }, "DOI": "10.1/x", "score": 1 }"#;
+    fs::write(&item, crossref).unwrap();
+    let out = refdir(lib.path(), &["create", "--clean", item.to_str().unwrap()]);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let entry: Value =
+        serde_json::from_str(&fs::read_to_string(lib.path().join("Doe-2001/entry.json")).unwrap()).unwrap();
+    assert_eq!(entry["csl"]["type"], "article-journal");
+    assert_eq!(entry["csl"]["id"], "Doe:2001");
+    assert!(refdir(lib.path(), &["check"]).status.success());
+}

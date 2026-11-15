@@ -68,20 +68,24 @@ enum Command {
         #[arg(allow_hyphen_values = true, requires = "key")]
         changes: Vec<String>,
     },
-    /// Create an entry from a CSL-JSON item, and print its folder
+    /// Create entries from CSL-JSON items, and print their folders
     ///
-    /// The entry must pass `check`: the item must follow the CSL schema. doi.org's CSL-JSON does not
-    /// (Crossref's types and extra keys), so `create` refuses it, with what is wrong
+    /// An item without an `id` that BibTeX can have gets one: `Knuth:1984`, then `Knuth:1984a`, ….
+    /// Nothing is written unless every entry would pass `check`, and no DOI is in the library twice
     Create {
-        /// The CSL-JSON item, or an array of one; without it, standard input
+        /// A CSL-JSON item, or an array of them, as Zotero exports; without it, standard input
         item: Option<PathBuf>,
-        /// The citation key, in place of the item's `id`
+        /// The citation key, in place of the item's `id`; for one item
         #[arg(long)]
         key: Option<String>,
+        /// Keep only what the CSL schema has, fitted to it, as for doi.org's items (Crossref's or
+        /// DataCite's): `curl -LH "Accept: application/vnd.citationstyles.csl+json" https://doi.org/<DOI>`
+        #[arg(long)]
+        clean: bool,
         /// Keep the item as `sources.NAME`, as a fetching app does, not as the entry's own `csl`
         #[arg(long, value_name = "NAME")]
         source: Option<String>,
-        /// A file to copy into the entry; repeat for more
+        /// A file to copy into the entry; repeat for more; for one item
         #[arg(long)]
         file: Vec<PathBuf>,
     },
@@ -170,8 +174,8 @@ fn run(cli: Cli) -> Result<bool> {
         Command::Tag { key: Some(key), changes } => tag_entry(&library, &key, &changes),
         Command::Bib { aux, tag, all: _, format } => bib(&library, aux.as_deref(), &tag, format),
         Command::Check => check(&library, paths.len() > 1),
-        Command::Create { item, key, source, file } => {
-            create(&library, &paths[0], item.as_deref(), key, source.as_deref(), &file)
+        Command::Create { item, key, clean, source, file } => {
+            create(&library, &paths[0], item.as_deref(), key, clean, source.as_deref(), &file)
         }
     }
 }
@@ -347,63 +351,106 @@ fn tag_entry(library: &Library, key: &str, changes: &[String]) -> Result<bool> {
 
 // MARK: - create
 
-/// Creates the entry in the first library. Its key must be free in all of them
+/// Creates the entries in the first library, with keys and DOIs free in all of them
 fn create(
     library: &Library,
     first: &Path,
-    item: Option<&Path>,
+    input: Option<&Path>,
     key: Option<String>,
+    clean: bool,
     source: Option<&str>,
     files: &[PathBuf],
 ) -> Result<bool> {
-    let text = match item {
+    let text = match input {
         Some(path) => {
             std::fs::read_to_string(path).with_context(|| format!("cannot read {}", path.display()))?
         }
         None => std::io::read_to_string(std::io::stdin()).context("cannot read standard input")?,
     };
-    let item = match serde_json::from_str(&text).context("the item is not JSON")? {
-        Value::Object(item) => item,
-        Value::Array(items) if items.len() == 1 && items[0].is_object() => {
-            items[0].as_object().unwrap().clone()
-        }
-        _ => bail!("the item is not a CSL-JSON object, nor an array of one"),
+    let items = match serde_json::from_str(&text).context("the input is not JSON")? {
+        Value::Array(items) => items,
+        item => vec![item],
     };
-    let Some(id) = key.or_else(|| item.get("id").and_then(Value::as_str).map(str::to_owned)) else {
-        bail!("the item has no id: give a key with --key");
-    };
-    if !bibtex::is_key(&id) {
-        bail!("{id:?} cannot be a BibTeX key (A-Z a-z 0-9 _ : -): give one with --key");
-    }
-    if let Some(other) = library.find(&id).first() {
-        bail!("{} has the key {id}", other.dir.display());
+    if items.len() != 1 && (key.is_some() || !files.is_empty()) {
+        bail!("--key and --file are for one item; there are {}", items.len());
     }
     if let Some(missing) = files.iter().find(|f| !f.is_file()) {
         bail!("{} is not a file", missing.display());
     }
-    let mut item = item;
-    item.insert("id".into(), json!(id));
-    let item = refdir::prune(Value::Object(item)).unwrap_or_default();
-    let mut data = json!({ "v": 1, "added": now() });
-    match source {
-        Some(name) => data["sources"] = json!({ name: { "csl": item } }),
-        None => data["csl"] = item,
+    let schema = schema::Schema::new()?;
+    // Each entry to write, by its key, and what is wrong, by item
+    let mut entries: Vec<(String, Value)> = Vec::new();
+    let mut errors: Vec<String> = Vec::new();
+    // The DOIs of the entries to write, in lower case
+    let mut dois: Vec<String> = Vec::new();
+    let many = items.len() > 1;
+    for (n, item) in items.into_iter().enumerate() {
+        let at = if many { format!("item {}: ", n + 1) } else { String::new() };
+        let Value::Object(mut item) = item else {
+            errors.push(format!("{at}not a CSL-JSON object"));
+            continue;
+        };
+        if clean {
+            item = csl::clean(&item);
+        }
+        let taken =
+            |k: &str| !library.find(k).is_empty() || entries.iter().any(|(e, _)| refdir::same_id(e, k));
+        let given = key.clone().or_else(|| {
+            item.get("id").and_then(Value::as_str).filter(|k| bibtex::is_key(k)).map(str::to_owned)
+        });
+        let id = match given {
+            Some(id) if !bibtex::is_key(&id) => {
+                errors.push(format!("{at}{id:?} cannot be a BibTeX key (A-Z a-z 0-9 _ : -)"));
+                continue;
+            }
+            Some(id) if taken(&id) => {
+                errors.push(format!("{at}another entry has the key {id}"));
+                continue;
+            }
+            Some(id) => id,
+            None => refdir::new_id(&item, taken),
+        };
+        let doi = item.get("DOI").and_then(Value::as_str).map(|d| d.trim().to_ascii_lowercase());
+        if let Some(doi) = doi.filter(|d| !d.is_empty()) {
+            if let Some(other) = library.find_doi(&doi).first() {
+                errors.push(format!("{at}{} has the DOI {doi}", other.dir.display()));
+                continue;
+            }
+            if dois.contains(&doi) {
+                errors.push(format!("{at}an item before it has the DOI {doi}"));
+                continue;
+            }
+            dois.push(doi);
+        }
+        item.insert("id".into(), json!(id));
+        let item = refdir::prune(Value::Object(item)).unwrap_or_default();
+        let mut data = json!({ "v": 1, "added": now() });
+        match source {
+            Some(name) => data["sources"] = json!({ name: { "csl": item } }),
+            None => data["csl"] = item,
+        }
+        let wrong = schema.errors(&data);
+        if !wrong.is_empty() {
+            errors.extend(wrong.into_iter().map(|e| format!("{at}{e}")));
+            continue;
+        }
+        entries.push((id, data));
     }
-    let errors = schema::Schema::new()?.errors(&data);
     if !errors.is_empty() {
         errors.iter().for_each(|e| eprintln!("refdir: error: {e}"));
-        bail!("the entry would not pass check; nothing was written");
+        bail!("nothing was written");
     }
-    let data = data.as_object().unwrap();
-    let dir = refdir::create_entry(first, &id, data)
-        .map_err(|e| anyhow::anyhow!("cannot create the entry: {e}"))?;
-    for path in files {
-        let name = path.file_name().unwrap_or_default().to_string_lossy();
-        refdir::add_file(&dir, &name, |tmp| std::fs::copy(path, tmp).map(drop)).map_err(|e| {
-            anyhow::anyhow!("created {}, but cannot add {}: {e}", dir.display(), path.display())
-        })?;
+    for (id, data) in &entries {
+        let dir = refdir::create_entry(first, id, data.as_object().unwrap())
+            .map_err(|e| anyhow::anyhow!("cannot create the entry {id}: {e}"))?;
+        for path in files {
+            let name = path.file_name().unwrap_or_default().to_string_lossy();
+            refdir::add_file(&dir, &name, |tmp| std::fs::copy(path, tmp).map(drop)).map_err(|e| {
+                anyhow::anyhow!("created {}, but cannot add {}: {e}", dir.display(), path.display())
+            })?;
+        }
+        out!("{}", dir.display());
     }
-    out!("{}", dir.display());
     Ok(true)
 }
 
@@ -545,6 +592,9 @@ fn check(library: &Library, several: bool) -> Result<bool> {
     }
     for (recid, entries) in library.duplicate_recids() {
         error(format!("{} entries have INSPIRE record {recid}: {}", entries.len(), dirs(&entries)));
+    }
+    for (doi, entries) in library.duplicate_dois() {
+        error(format!("{} entries have the DOI {doi}: {}", entries.len(), dirs(&entries)));
     }
     for entry in library.entries.iter().filter(|e| !e.name_matches_id()) {
         let id = entry.id().unwrap_or_default();

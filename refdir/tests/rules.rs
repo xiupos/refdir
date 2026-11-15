@@ -579,3 +579,82 @@ fn a_new_entry_gets_a_free_folder_and_a_free_key() {
     assert!(matches!(create_entry(p, "taken:2000A", &data), Err(Error::KeyTaken)));
     assert!(matches!(create_entry(p, "a b", &data), Err(Error::BadKey)));
 }
+
+#[test]
+fn a_cleaned_item_has_only_what_the_csl_schema_has() {
+    // As doi.org gives a Crossref item, shortened
+    let crossref = object(json!({
+        "indexed": { "date-time": "2026-11-04T22:23:29Z" },
+        "publisher": "American Physical Society (APS)",
+        "issue": "12",
+        "DOI": "10.1103/physrevd.49.6587",
+        "type": "journal-article",
+        "page": "6587-6598",
+        "title": "On black hole entropy",
+        "volume": "49",
+        "author": [{ "given": "Ted", "family": "Jacobson", "sequence": "first", "affiliation": [] }],
+        "container-title": "Physical Review D",
+        "ISSN": ["0556-2821"],
+        "issued": { "date-parts": [[1994, 6, 15]], "date-time": "1994-06-15T00:00:00Z" },
+        "subtitle": [],
+        "id": "https://doi.org/10.1103/physrevd.49.6587",
+        "number-of-pages": 12
+    }));
+    let expect = json!({
+        "publisher": "American Physical Society (APS)",
+        "issue": "12",
+        "DOI": "10.1103/physrevd.49.6587",
+        "type": "article-journal",
+        "page": "6587-6598",
+        "title": "On black hole entropy",
+        "volume": "49",
+        "author": [{ "given": "Ted", "family": "Jacobson" }],
+        "container-title": "Physical Review D",
+        "ISSN": "0556-2821",
+        "issued": { "date-parts": [[1994, 6, 15]] },
+        "number-of-pages": 12
+    });
+    assert_eq!(Value::Object(csl::clean(&crossref)), expect);
+    let kind = |t: &str| csl::clean(&object(json!({ "type": t })))["type"].clone();
+    assert_eq!(kind("monograph"), "book");
+    assert_eq!(kind("proceedings-article"), "paper-conference");
+    assert_eq!(kind("software"), "software");
+    assert_eq!(kind("grant"), "document");
+}
+
+#[test]
+fn a_key_is_made_from_the_first_author_and_the_year() {
+    let key = |item: Value, taken: &[&str]| new_id(&object(item), |k| taken.contains(&k));
+    let year = json!({ "date-parts": [[1964]] });
+    assert_eq!(
+        key(json!({ "author": [{ "family": "Gürsey", "given": "F." }], "issued": year }), &[]),
+        "Gursey:1964"
+    );
+    assert_eq!(
+        key(json!({ "author": [{ "family": "Øksendal" }], "issued": year }), &["Oksendal:1964"]),
+        "Oksendal:1964a"
+    );
+    assert_eq!(
+        key(
+            json!({ "author": [{ "literal": "The ATLAS Collaboration" }], "issued": { "raw": "2012" } }),
+            &[]
+        ),
+        "ATLAS:2012"
+    );
+    assert_eq!(key(json!({ "editor": [{ "family": "van Dyke" }] }), &[]), "vanDyke");
+    assert_eq!(key(json!({ "author": [{ "family": "高木" }], "issued": year }), &[]), "ref:1964");
+}
+
+#[test]
+fn dois_are_found_ignoring_case() {
+    let lib = TempDir::new().unwrap();
+    let p = lib.path();
+    write_entry(p, "a", &json!({ "v": 1, "csl": { "DOI": "10.1000/ABC" } }));
+    write_entry(p, "b", &json!({ "v": 1, "sources": { "s": { "csl": { "DOI": " 10.1000/abc" } } } }));
+    write_entry(p, "c", &json!({ "v": 1, "csl": { "DOI": "10.1000/other" } }));
+    let library = Library::read(p).unwrap();
+    assert_eq!(library.find_doi("10.1000/Abc").len(), 2);
+    let dups = library.duplicate_dois();
+    assert_eq!(dups.len(), 1);
+    assert_eq!(dups[0].0, "10.1000/abc");
+}

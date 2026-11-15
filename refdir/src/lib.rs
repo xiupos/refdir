@@ -193,6 +193,12 @@ impl Entry {
         self.data.get("sources")?.get("inspire")
     }
 
+    /// The resolved `DOI`, trimmed, in lower case: DOIs ignore ASCII case
+    pub fn doi(&self) -> Option<String> {
+        let doi = self.field("DOI")?.as_str()?.trim();
+        (!doi.is_empty()).then(|| doi.to_ascii_lowercase())
+    }
+
     /// `sources.inspire.recid`
     pub fn inspire_recid(&self) -> Option<u64> {
         self.inspire()?.get("recid")?.as_u64()
@@ -289,6 +295,17 @@ impl Library {
         self.entries.iter().filter(|e| e.id().is_some_and(|i| same_id(i, id))).collect()
     }
 
+    /// The entries with a DOI, ignoring case
+    pub fn find_doi(&self, doi: &str) -> Vec<&Entry> {
+        let doi = doi.trim().to_ascii_lowercase();
+        self.entries.iter().filter(|e| e.doi().as_deref() == Some(doi.as_str())).collect()
+    }
+
+    /// The entries that share a DOI, by DOI in lower case
+    pub fn duplicate_dois(&self) -> Vec<(String, Vec<&Entry>)> {
+        duplicates(self.entries.iter().filter_map(|e| Some((e.doi()?, e))))
+    }
+
     /// The entries that share a citation key, ignoring case, by key in lower case
     pub fn duplicate_ids(&self) -> Vec<(String, Vec<&Entry>)> {
         duplicates(self.entries.iter().filter_map(|e| Some((e.id()?.to_ascii_lowercase(), e))))
@@ -320,6 +337,52 @@ fn duplicates<'a, K: Ord>(items: impl Iterator<Item = (K, &'a Entry)>) -> Vec<(K
         groups.entry(k).or_default().push(e);
     }
     groups.into_iter().filter(|(_, g)| g.len() > 1).collect()
+}
+
+/// Letters with marks, and the ASCII letter each is written as in a key
+const FOLDS: [(&str, char); 15] = [
+    ("àáâãäåāăą", 'a'),
+    ("çćčĉ", 'c'),
+    ("ďđ", 'd'),
+    ("èéêëēĕėęě", 'e'),
+    ("ĝğġģ", 'g'),
+    ("ìíîïīĭį", 'i'),
+    ("ĺļľł", 'l'),
+    ("ñńņň", 'n'),
+    ("òóôõöøōŏő", 'o'),
+    ("ŕŗř", 'r'),
+    ("śŝşš", 's'),
+    ("ţťŧ", 't'),
+    ("ùúûüũūŭůűų", 'u'),
+    ("ýÿŷ", 'y'),
+    ("źżž", 'z'),
+];
+
+/// A citation key for an item that has none: its first author's family name (or literal name, its
+/// first word but `The`) in ASCII letters and digits, `:`, and its year, as INSPIRE's keys are: `Knuth:1984`.
+/// If `taken` says it is, `a`, `b`, … follow the year. Without a name, `ref`
+pub fn new_id(item: &Map<String, Value>, taken: impl Fn(&str) -> bool) -> String {
+    let first = item.get("author").or_else(|| item.get("editor")).and_then(|a| a.get(0));
+    let part = |key| first.and_then(|f| f.get(key)).and_then(Value::as_str);
+    let literal = || part("literal")?.split_whitespace().find(|w| !w.eq_ignore_ascii_case("the"));
+    let name = part("family").filter(|f| !f.is_empty()).or_else(literal).or(part("given"));
+    let ascii = |c: char| {
+        let lower = c.to_lowercase().next().unwrap_or(c);
+        let folded = FOLDS.iter().find(|(marked, _)| marked.contains(lower)).map(|(_, plain)| *plain);
+        match folded {
+            Some(plain) if c.is_uppercase() => Some(plain.to_ascii_uppercase().to_string()),
+            Some(plain) => Some(plain.to_string()),
+            None if c == 'ß' => Some("ss".into()),
+            None => c.is_ascii_alphanumeric().then(|| c.to_string()),
+        }
+    };
+    let base: String = name.unwrap_or_default().chars().filter_map(ascii).collect();
+    let base = if base.is_empty() { "ref".to_owned() } else { base };
+    let year = item.get("issued").and_then(csl::year_month).map(|(y, _)| y.to_string());
+    let base = year.map_or(base.clone(), |y| format!("{base}:{y}"));
+    let letters = ('a'..='z').map(|c| format!("{base}{c}"));
+    let mut keys = std::iter::once(base.clone()).chain(letters).chain((2..).map(|n| format!("{base}-{n}")));
+    keys.find(|k| !taken(k)).unwrap()
 }
 
 /// The folder name a citation key makes: `Maldacena:1997re` → `Maldacena-1997re`
