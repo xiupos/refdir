@@ -283,10 +283,12 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var place: Place? = .all
     @State private var selection: String?
+    /// The column shown where only one fits, as on an iPhone
+    @State private var column = NavigationSplitViewColumn.sidebar
 
     var body: some View {
         @Bindable var store = store
-        NavigationSplitView {
+        NavigationSplitView(preferredCompactColumn: $column) {
             Places(place: $place)
         } content: {
             EntryList(place: place ?? .all, selection: $selection)
@@ -311,6 +313,7 @@ struct RootView: View {
             guard let key = activity.userInfo?[CSSearchableItemActivityIdentifier] as? String else { return }
             place = .all
             selection = key
+            column = .detail
         }
         .onChange(of: scenePhase) { _, phase in
             // A change synced while the app was away

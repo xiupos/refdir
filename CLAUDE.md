@@ -20,8 +20,9 @@ does it), no cache of responses, no TeX typeset in a web view.
 - `Package.swift` is as Playgrounds writes it: change it only as its app settings would, except
   for `additionalInfoPlistContentFilePath: "Info.plist"`. One target, `AppModule`, with
   `path: "."`, so every `.swift` file in the project is compiled. No packages, no extensions.
-- `Info.plist` holds only `ITSAppUsesNonExemptEncryption` = `false`: the app uses only the
-  system's HTTPS, which is exempt. Playgrounds may drop the line of `Package.swift` that merges
+- `Info.plist` holds `ITSAppUsesNonExemptEncryption` = `false`: the app uses only the
+  system's HTTPS, which is exempt; and `NSUserActivityTypes` with Spotlight's
+  `com.apple.corespotlightitem`, without which SwiftUI may not give the app what was chosen there. Playgrounds may drop the line of `Package.swift` that merges
   it: check it before uploading a build.
 - Fixed: the name Refdir, bundle ID `net.xiupos.refdir`, the team ID, the AppIcon (refdir's icon
   on white, as iOS icons are opaque; for a dark home screen, on none, with its blues a step
@@ -106,7 +107,8 @@ Everything that imports SwiftUI needs the iPad.
 - **Spotlight** has the entries, put in again after every read (`Store.index`, one domain,
   `entries`, emptied first, so that removed entries go): the title, the byline and year, the key,
   and the names and tags as keywords. One chosen there opens the app on it
-  (`onContinueUserActivity`, `CSSearchableItemActivityIdentifier` being the key), in All Entries.
+  (`onContinueUserActivity`, `CSSearchableItemActivityIdentifier` being the key), in All Entries,
+  on its page where only one column fits (`preferredCompactColumn`).
   It is refdir's GNOME Shell search.
 - **Deleting** removes the entry's folder after asking: iOS has no trash for the user's folders.
 - **Exporting** shares a `.bib` written when it is shared (`BibFile`, a `FileRepresentation`).
@@ -119,7 +121,6 @@ What only the iPad can check:
 - Everything in the UI: choosing the folder, adding, Get PDF, Read and markup, tags, the note,
   editing BibTeX, exporting, deleting, the layouts on iPhone and iPad
 - Synced changes showing when the app becomes active
-- Spotlight: entries found, and one chosen opening on its page, on iPhone too
 - That Playgrounds builds the dark and tinted icons (`appearances` in the AppIcon's
   `Contents.json`): if not, the light one shows in every mode
 - Pasting BibTeX of several lines into the add alert's field: if the field cuts it at the first
