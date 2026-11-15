@@ -269,3 +269,52 @@ fn tag() {
         serde_json::from_str(&fs::read_to_string(lib.path().join("pyhf/entry.json")).unwrap()).unwrap();
     assert!(pyhf.get("tags").is_none());
 }
+
+#[test]
+fn create() {
+    let lib = library();
+    let item = lib.path().join(".item.json");
+    let csl = r#"[{ "id": "Witten:1998qj", "type": "article-journal", "title": "Anti-de Sitter space and holography", "author": [{ "family": "Witten", "given": "Edward" }] }]"#;
+    fs::write(&item, csl).unwrap();
+    // Outside the entries: a folder starting with `.` is not one
+    fs::create_dir(lib.path().join(".in")).unwrap();
+    let pdf = lib.path().join(".in/paper.pdf");
+    fs::write(&pdf, "%PDF-").unwrap();
+    let out = refdir(lib.path(), &["create", item.to_str().unwrap(), "--file", pdf.to_str().unwrap()]);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let dir = lib.path().join("Witten-1998qj");
+    assert_eq!(stdout(&out).trim(), dir.to_str().unwrap());
+    let entry: Value = serde_json::from_str(&fs::read_to_string(dir.join("entry.json")).unwrap()).unwrap();
+    assert_eq!(entry["csl"]["title"], "Anti-de Sitter space and holography");
+    assert!(entry["added"].as_str().unwrap().ends_with('Z'));
+    assert_eq!(fs::read_to_string(dir.join("paper.pdf")).unwrap(), "%PDF-");
+    assert!(refdir(lib.path(), &["check"]).status.success());
+
+    // A key taken, ignoring case; a key BibTeX cannot have; another key with --key, as a source
+    let out = refdir(lib.path(), &["create", item.to_str().unwrap()]);
+    assert_eq!(out.status.code(), Some(2));
+    let out = refdir(lib.path(), &["create", "--key", "a b", item.to_str().unwrap()]);
+    assert_eq!(out.status.code(), Some(2));
+    let out = refdir(lib.path(), &["create", "--key", "W:1998", "--source", "mine", item.to_str().unwrap()]);
+    assert!(out.status.success());
+    let entry: Value =
+        serde_json::from_str(&fs::read_to_string(lib.path().join("W-1998/entry.json")).unwrap()).unwrap();
+    assert_eq!(entry["sources"]["mine"]["csl"]["id"], "W:1998");
+}
+
+#[test]
+fn create_refuses_what_check_would() {
+    let lib = library();
+    let item = lib.path().join(".item.json");
+    // Crossref's CSL-JSON, as doi.org gives it
+    fs::write(
+        &item,
+        r#"{ "id": "X:2000a", "type": "journal-article", "title": "T", "ISSN": ["0556-2821"] }"#,
+    )
+    .unwrap();
+    let before = fs::read_dir(lib.path()).unwrap().count();
+    let out = refdir(lib.path(), &["create", item.to_str().unwrap()]);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("/csl/type"));
+    assert_eq!(fs::read_dir(lib.path()).unwrap().count(), before);
+}

@@ -565,3 +565,17 @@ fn export_leaves_out_entries_without_bibtex_and_repeated_keys() {
     assert_eq!(left, 2);
     assert_eq!(text, "@article{A:2000a,\n    title = {{T}},\n}\n\n@misc{D:2001d,\n}\n");
 }
+
+#[test]
+fn a_new_entry_gets_a_free_folder_and_a_free_key() {
+    let lib = TempDir::new().unwrap();
+    let p = lib.path();
+    write_entry(p, "a-2000a", &json!({ "v": 1 }));
+    write_entry(p, "b", &json!({ "v": 1, "csl": { "id": "Taken:2000a" } }));
+    let data = object(json!({ "v": 1, "csl": { "id": "A:2000a" } }));
+    let dir = create_entry(p, "A:2000a", &data).unwrap();
+    assert_eq!(dir, p.join("A-2000a-2"));
+    assert_eq!(Entry::read(&dir).unwrap().id(), Some("A:2000a"));
+    assert!(matches!(create_entry(p, "taken:2000A", &data), Err(Error::KeyTaken)));
+    assert!(matches!(create_entry(p, "a b", &data), Err(Error::BadKey)));
+}

@@ -68,6 +68,23 @@ enum Command {
         #[arg(allow_hyphen_values = true, requires = "key")]
         changes: Vec<String>,
     },
+    /// Create an entry from a CSL-JSON item, and print its folder
+    ///
+    /// The entry must pass `check`: the item must follow the CSL schema. doi.org's CSL-JSON does not
+    /// (Crossref's types and extra keys), so `create` refuses it, with what is wrong
+    Create {
+        /// The CSL-JSON item, or an array of one; without it, standard input
+        item: Option<PathBuf>,
+        /// The citation key, in place of the item's `id`
+        #[arg(long)]
+        key: Option<String>,
+        /// Keep the item as `sources.NAME`, as a fetching app does, not as the entry's own `csl`
+        #[arg(long, value_name = "NAME")]
+        source: Option<String>,
+        /// A file to copy into the entry; repeat for more
+        #[arg(long)]
+        file: Vec<PathBuf>,
+    },
     /// Write the entries cited in a .aux file, or those with a tag, or all, to standard output
     #[command(group(ArgGroup::new("input").required(true).args(["aux", "tag", "all"])))]
     Bib {
@@ -153,6 +170,9 @@ fn run(cli: Cli) -> Result<bool> {
         Command::Tag { key: Some(key), changes } => tag_entry(&library, &key, &changes),
         Command::Bib { aux, tag, all: _, format } => bib(&library, aux.as_deref(), &tag, format),
         Command::Check => check(&library, paths.len() > 1),
+        Command::Create { item, key, source, file } => {
+            create(&library, &paths[0], item.as_deref(), key, source.as_deref(), &file)
+        }
     }
 }
 
@@ -323,6 +343,85 @@ fn tag_entry(library: &Library, key: &str, changes: &[String]) -> Result<bool> {
         .map_err(|e| anyhow::anyhow!("cannot change the tags of {}: {e}", entry.dir.display()))?;
     tags.iter().for_each(|t| out!("{t}"));
     Ok(true)
+}
+
+// MARK: - create
+
+/// Creates the entry in the first library. Its key must be free in all of them
+fn create(
+    library: &Library,
+    first: &Path,
+    item: Option<&Path>,
+    key: Option<String>,
+    source: Option<&str>,
+    files: &[PathBuf],
+) -> Result<bool> {
+    let text = match item {
+        Some(path) => {
+            std::fs::read_to_string(path).with_context(|| format!("cannot read {}", path.display()))?
+        }
+        None => std::io::read_to_string(std::io::stdin()).context("cannot read standard input")?,
+    };
+    let item = match serde_json::from_str(&text).context("the item is not JSON")? {
+        Value::Object(item) => item,
+        Value::Array(items) if items.len() == 1 && items[0].is_object() => {
+            items[0].as_object().unwrap().clone()
+        }
+        _ => bail!("the item is not a CSL-JSON object, nor an array of one"),
+    };
+    let Some(id) = key.or_else(|| item.get("id").and_then(Value::as_str).map(str::to_owned)) else {
+        bail!("the item has no id: give a key with --key");
+    };
+    if !bibtex::is_key(&id) {
+        bail!("{id:?} cannot be a BibTeX key (A-Z a-z 0-9 _ : -): give one with --key");
+    }
+    if let Some(other) = library.find(&id).first() {
+        bail!("{} has the key {id}", other.dir.display());
+    }
+    if let Some(missing) = files.iter().find(|f| !f.is_file()) {
+        bail!("{} is not a file", missing.display());
+    }
+    let mut item = item;
+    item.insert("id".into(), json!(id));
+    let item = refdir::prune(Value::Object(item)).unwrap_or_default();
+    let mut data = json!({ "v": 1, "added": now() });
+    match source {
+        Some(name) => data["sources"] = json!({ name: { "csl": item } }),
+        None => data["csl"] = item,
+    }
+    let errors = schema::Schema::new()?.errors(&data);
+    if !errors.is_empty() {
+        errors.iter().for_each(|e| eprintln!("refdir: error: {e}"));
+        bail!("the entry would not pass check; nothing was written");
+    }
+    let data = data.as_object().unwrap();
+    let dir = refdir::create_entry(first, &id, data)
+        .map_err(|e| anyhow::anyhow!("cannot create the entry: {e}"))?;
+    for path in files {
+        let name = path.file_name().unwrap_or_default().to_string_lossy();
+        refdir::add_file(&dir, &name, |tmp| std::fs::copy(path, tmp).map(drop)).map_err(|e| {
+            anyhow::anyhow!("created {}, but cannot add {}: {e}", dir.display(), path.display())
+        })?;
+    }
+    out!("{}", dir.display());
+    Ok(true)
+}
+
+/// The time, in UTC, as `added` has it: `2026-11-15T10:00:00Z`
+fn now() -> String {
+    let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+    let (days, rest) = ((secs / 86_400) as i64, secs % 86_400);
+    // Days to a civil date, after Howard Hinnant's `civil_from_days`
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    format!("{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}Z", rest / 3600, rest / 60 % 60, rest % 60)
 }
 
 // MARK: - bib

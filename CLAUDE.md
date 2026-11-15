@@ -42,6 +42,7 @@ Check with `cargo fmt`, `cargo clippy --all-targets` and `cargo test` (which run
 
 - **`edit_csl`** writes one key of the entry's own `csl`, which the resolved item shows over the sources. A value equal to the sources' resolved value, or empty, removes the key, so that the sources show through again; an empty `csl` is removed. A key (`id`) must pass `bibtex::is_key` and be free across the library (`id_taken`). How a field is typed (one author per line, `Family, Given`) is the app's.
 - **`set_note`**: the text as typed; a blank one removes `note`. `note` and `csl` of the wrong type are refused (`Error::Note`, `Error::Csl`), not written over.
+- **`create_entry`** writes a new entry in a free folder named by its key, which must be a BibTeX key free in the library. It takes the whole `entry.json`: what goes in it (`csl` or a source, `added`) is the caller's.
 - **`add_file`** copies through a `.` file, then renames, to a free name: `-2`, `-3`, … before the extension, ignoring ASCII case.
 
 ## Tags
@@ -60,6 +61,7 @@ The standard asks only for distinct non-empty strings. The rest is shared by hep
 - **Output.** Results go to stdout through `out!`, which exits quietly on a broken pipe. Warnings go to stderr through `warn!`. `check` prints its findings to stdout and its summary line to stderr, so that a clean library prints nothing to stdout.
 - **`ls`**: tab-separated, with no column padding: CJK names would need a width crate. An entry without a key shows `[folder]`; a key can never contain brackets.
 - **`tag`**: `+TAG` / `-TAG` are applied in order and written once. `-TAG` needs `allow_hyphen_values`, so a stray `-q` there is a tag to remove.
+- **`create`** puts the item in `csl` (the user's), or in `sources.NAME` with `--source`, and refuses an entry that `check` would reject (the same `schema.rs`), before writing anything: doi.org's CSL-JSON is Crossref's, with `journal-article` and extra keys, and would make a broken entry. Cleaning it is not done. The key is checked free across all the libraries; the entry goes in the first. `added` is made by hand (`now`, days to a date), to keep the dependencies few.
 - **`open`** uses `open::that_detached`, so that the command returns at once. To delete files, use the `trash` crate.
 
 ## BibTeX

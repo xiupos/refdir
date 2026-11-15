@@ -455,6 +455,22 @@ pub fn edit_csl(library: &Path, dir: &Path, key: &str, value: Option<Value>) -> 
     put(dir, data, Field::Csl, Value::Object(csl))
 }
 
+/// Creates an entry in `library` with `data` as its `entry.json`, in a folder named by its key `id`
+/// ([`free_name`]), and returns the folder. The key must be a BibTeX key ([`bibtex::is_key`]) that
+/// no entry of the library has; `data` is written as it is, so its resolved `id` should be `id`
+pub fn create_entry(library: &Path, id: &str, data: &Map<String, Value>) -> Result<PathBuf, Error> {
+    if !bibtex::is_key(id) {
+        return Err(Error::BadKey);
+    }
+    if id_taken(library, id, None)? {
+        return Err(Error::KeyTaken);
+    }
+    let dir = library.join(free_name(library, id)?);
+    fs::create_dir(&dir)?;
+    write_atomic(&dir.join(ENTRY), &Value::Object(data.clone()))?;
+    Ok(dir)
+}
+
 /// Adds a file to the readable entry in `dir`, named `name`, or with `-2`, `-3`, … before its
 /// extension if a file in the folder has that name, ignoring ASCII case. `copy` writes it to the
 /// path it is given, a `.` file that is then renamed. Returns the file's path

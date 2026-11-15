@@ -32,7 +32,10 @@ refdir open <key>                     # the main file, with the default app
 refdir tag [<key> [+TAG|-TAG]...]     # the library's tags with counts; an entry's; add, remove
 refdir bib <file.aux> | --tag T | --all [--format bibtex|csl-json]
 refdir check                          # schema/v1.json, duplicate keys and INSPIRE records
+refdir create [item.json] [--key K] [--source NAME] [--file F]...   # a new entry from CSL-JSON
 ```
+
+`refdir create` reads one CSL-JSON item (a file, or standard input), and writes it as the entry's own `csl`, or as `sources.NAME` with `--source`. The key is the item's `id`, or `--key`; it must be one BibTeX can have, and free ignoring case. The entry must pass `check`, or nothing is written: doi.org's CSL-JSON, which is Crossref's, does not.
 
 Keys are found ignoring case. `refdir ls -q | fzf | xargs refdir open` picks a paper.
 
