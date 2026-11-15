@@ -19,7 +19,7 @@ let package = Package(
             bundleIdentifier: "net.xiupos.refdir",
             teamIdentifier: "YL679VBY6X",
             displayVersion: "0.1",
-            bundleVersion: "5",
+            bundleVersion: "7",
             appIcon: .asset("AppIcon"),
             accentColor: .presetColor(.blue),
             supportedDeviceFamilies: [
