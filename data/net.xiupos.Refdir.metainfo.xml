@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
   <id>net.xiupos.Refdir</id>
-  <name>refdir</name>
+  <name>Refdir</name>
   <summary>Keep a library of references as a folder of files</summary>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>MIT</project_license>
@@ -10,7 +10,7 @@
   </developer>
   <description>
     <p>
-      refdir keeps your references in a folder you choose: one folder per entry, named by its
+      Refdir keeps your references in a folder you choose: one folder per entry, named by its
       citation key, with its BibTeX and its files. The refdir command opens the same folder, and
       it can be synced between devices.
     </p>

@@ -1,11 +1,18 @@
 # Implementation Notes
 
-refdir: a library of references as a folder of BibTeX entries (`FORMAT.md`), with a command
+Refdir: a library of references as a folder of BibTeX entries (`FORMAT.md`), with a command
 (`refdir`) and a GNOME app (`refdir-gtk`). What the code does not say by itself: the reasons
 behind decisions, pitfalls, and how to test the app.
 
 **Keep it small**: about 2,300 lines in all (`wc -l src/*.rs src/bin/*.rs src/bin/*/*.rs tests/*.rs`),
-never squeezing code to get there. A change of the format goes into `FORMAT.md` first.
+never squeezing code to get there. A change of the format goes into `FORMAT.md` first, with
+examples in `tests/cases.json`.
+
+The name is Refdir; `refdir` is the command, the crate, and the folder names.
+
+**Other programs.** RefdirApp (`~/Syncthing/swift-playgrounds-project/RefdirApp.swiftpm`), the
+iOS app, implements the format again in Swift from this code, with a copy of `tests/cases.json`:
+a rule changed here is changed there, and the copy replaced.
 
 ## Layout
 
@@ -21,7 +28,8 @@ command without GTK.
 | `src/bin/refdir.rs` | The command |
 | `src/bin/refdir-gtk/main.rs` | The window: places (all, tags), the list, adding, the folder setting, watching the library |
 | `src/bin/refdir-gtk/entry.rs` | `EntryPane`: one entry |
-| `tests/library.rs` | The format's rules, on temporary folders |
+| `tests/cases.json`, `tests/cases.rs` | The format's rules as examples, shared with other programs: BibTeX, keys, names, plain text, tags, finding, adding, files, identifiers |
+| `tests/library.rs` | The rules that need folders, on temporary folders |
 | `data/`, `build.rs`, `meson.build` | Icons, desktop entry, metainfo, the settings schema |
 
 Crates are renamed: `gtk` is gtk4 and `adw` is libadwaita. Check with `cargo test`,
@@ -36,6 +44,8 @@ Crates are renamed: `gtk` is gtk4 and `adw` is libadwaita. Check with `cargo tes
   used: it would rewrite values.
 - **The folder name is the key.** `Entry::read` sets the key to the folder's name, so that the
   two never disagree; renaming an entry is renaming its folder.
+- **Pure rules.** What the cases test takes values, not folders (`new_key`, `files`, `free_name`,
+  `fetch::month`), so that the cases need no disk; `add` and `Entry` read the folder and call them.
 - **Adding** (`refdir::add`) refuses the same paper (same `doi` or `eprint`), and makes the
   key free with `a`, `b`, … as INSPIRE does. INSPIRE's texkey is kept as it is; doi.org's key
   (`Takahashi_2006`) too.

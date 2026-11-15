@@ -148,35 +148,20 @@ impl Entry {
     /// The other files of the folder, but those starting with `.`, by name
     pub fn files(&self) -> Vec<PathBuf> {
         let names = fs::read_dir(&self.dir).into_iter().flatten().flatten().map(|e| e.file_name());
-        let mut files: Vec<PathBuf> = names
-            .filter(|n| n != ENTRY && !n.to_string_lossy().starts_with('.'))
-            .map(PathBuf::from)
-            .filter(|n| self.dir.join(n).is_file())
-            .collect();
-        files.sort_by(|a, b| by_name(&a.to_string_lossy(), &b.to_string_lossy()));
-        files
+        let names = names.map(|n| n.to_string_lossy().into_owned()).filter(|n| self.dir.join(n).is_file());
+        files(names.collect()).into_iter().map(PathBuf::from).collect()
     }
 
     /// The main file, the first by name, if it is a PDF
     pub fn pdf(&self) -> Option<PathBuf> {
         let main = self.files().into_iter().next()?;
-        main.extension().is_some_and(|x| x.eq_ignore_ascii_case("pdf")).then(|| self.dir.join(main))
+        is_pdf(&main.to_string_lossy()).then(|| self.dir.join(main))
     }
 
     /// Copies a file into the folder, named `name`, or with `-2`, `-3`, … before its extension if a
     /// file there has that name, ignoring ASCII case. Returns its path
     pub fn add_file(&self, name: &str, data: &[u8]) -> io::Result<PathBuf> {
-        let name = name.trim_start_matches('.');
-        let (stem, ext) = match name.rsplit_once('.') {
-            Some((stem, ext)) if !stem.is_empty() => (stem, format!(".{ext}")),
-            _ => (name, String::new()),
-        };
-        let taken: Vec<String> = fs::read_dir(&self.dir)?
-            .flatten()
-            .map(|e| e.file_name().to_string_lossy().to_ascii_lowercase())
-            .collect();
-        let mut names = std::iter::once(name.to_owned()).chain((2..).map(|i| format!("{stem}-{i}{ext}")));
-        let path = self.dir.join(names.find(|n| !taken.contains(&n.to_ascii_lowercase())).unwrap());
+        let path = self.dir.join(free_name(name, &folder_names(&self.dir)?));
         write_atomic(&path, data)?;
         Ok(path)
     }
@@ -255,11 +240,7 @@ impl Library {
 
     /// The entry that is the same paper as `bib`: by its DOI, or its arXiv number
     pub fn same(&self, bib: &Bib) -> Option<&Entry> {
-        let same = |f: &str| {
-            let value = bib.get(f)?;
-            self.entries.iter().find(|e| e.bib.get(f).is_some_and(|v| v.eq_ignore_ascii_case(&value)))
-        };
-        same("doi").or_else(|| same("eprint"))
+        same(&self.entries, bib)
     }
 }
 
@@ -280,18 +261,7 @@ pub fn tags<'a>(entries: impl IntoIterator<Item = &'a Entry>) -> Vec<(String, us
 /// it. Refuses a paper the library has (`Library::same`)
 pub fn add(folder: &Path, mut bib: Bib) -> io::Result<Entry> {
     let library = Library::read(folder)?;
-    if let Some(entry) = library.same(&bib) {
-        return Err(io::Error::new(
-            io::ErrorKind::AlreadyExists,
-            format!("the library has it, as {}", entry.key()),
-        ));
-    }
-    if !is_key(&bib.key) {
-        return Err(invalid(format!("{:?} cannot be a key", bib.key)));
-    }
-    let keys = std::iter::once(bib.key.clone()).chain(('a'..='z').map(|c| format!("{}{c}", bib.key)));
-    let free = |k: &String| library.find(k).is_none() && !folder.join(k).exists();
-    bib.key = keys.into_iter().find(free).ok_or_else(|| invalid("no free key".into()))?;
+    bib.key = new_key(&library.entries, &folder_names(folder)?, &bib)?;
     let dir = folder.join(&bib.key);
     fs::create_dir(&dir)?;
     let entry = Entry { dir, bib };
@@ -317,6 +287,58 @@ fn name(path: &Path) -> String {
 
 fn invalid(message: String) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message)
+}
+
+/// The entry that is the same paper as `bib`: by its DOI, or its arXiv number, ignoring ASCII case
+pub fn same<'a>(entries: &'a [Entry], bib: &Bib) -> Option<&'a Entry> {
+    let same = |f: &str| {
+        let value = bib.get(f)?;
+        entries.iter().find(|e| e.bib.get(f).is_some_and(|v| v.eq_ignore_ascii_case(&value)))
+    };
+    same("doi").or_else(|| same("eprint"))
+}
+
+/// The key a new entry for `bib` takes, among `entries` in folders named `folders`: its key, or
+/// with `a`, `b`, … after it if a folder has it, ignoring ASCII case. Refuses the same paper
+pub fn new_key(entries: &[Entry], folders: &[String], bib: &Bib) -> io::Result<String> {
+    if let Some(entry) = same(entries, bib) {
+        let message = format!("the library has it, as {}", entry.key());
+        return Err(io::Error::new(io::ErrorKind::AlreadyExists, message));
+    }
+    if !is_key(&bib.key) {
+        return Err(invalid(format!("{:?} cannot be a key", bib.key)));
+    }
+    let keys = std::iter::once(bib.key.clone()).chain(('a'..='z').map(|c| format!("{}{c}", bib.key)));
+    let taken = |k: &String| folders.iter().any(|f| f.eq_ignore_ascii_case(k));
+    keys.into_iter().find(|k| !taken(k)).ok_or_else(|| invalid("no free key".into()))
+}
+
+/// An entry's files among the names in its folder: not `entry.bib`, not starting with `.`, by
+/// name. The first is the main file
+pub fn files(mut names: Vec<String>) -> Vec<String> {
+    names.retain(|n| n != ENTRY && !n.starts_with('.'));
+    names.sort_by(|a, b| by_name(a, b));
+    names
+}
+
+pub fn is_pdf(name: &str) -> bool {
+    name.rsplit_once('.').is_some_and(|(_, x)| x.eq_ignore_ascii_case("pdf"))
+}
+
+/// A file's name, without a leading `.`, or with `-2`, `-3`, … before its extension if one of
+/// `taken` has it, ignoring ASCII case
+pub fn free_name(name: &str, taken: &[String]) -> String {
+    let name = name.trim_start_matches('.');
+    let (stem, ext) = match name.rsplit_once('.') {
+        Some((stem, ext)) if !stem.is_empty() => (stem, format!(".{ext}")),
+        _ => (name, String::new()),
+    };
+    let mut names = std::iter::once(name.to_owned()).chain((2..).map(|i| format!("{stem}-{i}{ext}")));
+    names.find(|n| !taken.iter().any(|t| t.eq_ignore_ascii_case(n))).unwrap()
+}
+
+fn folder_names(dir: &Path) -> io::Result<Vec<String>> {
+    Ok(fs::read_dir(dir)?.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect())
 }
 
 /// Names in order: ASCII letters in lower case, then by code point
@@ -353,9 +375,11 @@ fn short_name(name: &str) -> String {
         Some((family, given)) => (family.trim(), given.trim()),
         None => name.rsplit_once(' ').map_or((name, ""), |(given, family)| (family, given)),
     };
-    let initial = |w: &str| {
-        w.split('-').filter_map(|p| p.chars().next()).map(|c| format!("{c}.")).collect::<Vec<_>>().join("-")
+    // `Jean-Pierre` → `J.-P.`; `S.W.` → `S.W.`
+    let initial = |part: &str| -> String {
+        part.split('.').filter_map(|w| w.trim().chars().next()).map(|c| format!("{c}.")).collect()
     };
+    let initial = |w: &str| w.split('-').map(initial).collect::<Vec<_>>().join("-");
     let initials: String = given.split_whitespace().map(initial).collect();
     let family = plain(family);
     if initials.is_empty() { family } else { format!("{initials} {family}") }

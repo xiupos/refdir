@@ -1,4 +1,5 @@
-//! The rules of `FORMAT.md`, on libraries in temporary folders
+//! The rules of `FORMAT.md` that need folders, on libraries in temporary folders; the others are
+//! `cases.json`
 
 use refdir::{Bib, ENTRY, Entry, Library};
 use std::fs;
@@ -29,23 +30,6 @@ fn write(library: &Path, key: &str, text: &str) {
 }
 
 #[test]
-fn values_are_kept_as_written_in_their_order() {
-    let b = bib(MALDACENA);
-    assert_eq!(b.kind, "article");
-    assert_eq!(b.key, "Maldacena:1997re");
-    assert_eq!(
-        b.get("TITLE").unwrap(),
-        "{The Large $N$ limit of superconformal field theories and supergravity}"
-    );
-    let names: Vec<&str> = b.fields.iter().map(|(n, _)| n.as_str()).collect();
-    assert_eq!(names[..3], ["author", "title", "eprint"]);
-    // Written again, and read again, it is the same
-    assert_eq!(bib(&b.to_bibtex()), b);
-    let month = bib("@article{a, month = jun, title = {x}}");
-    assert!(month.to_bibtex().contains("month = jun,"));
-}
-
-#[test]
 fn an_entry_is_shown_by_its_title_names_and_year() {
     let lib = TempDir::new().unwrap();
     write(lib.path(), "Maldacena:1997re", MALDACENA);
@@ -58,21 +42,6 @@ fn an_entry_is_shown_by_its_title_names_and_year() {
     assert_eq!(atlas.byline(), "G. Aad et al.");
     assert_eq!(atlas.names(), ["G. Aad"]);
     assert_eq!(atlas.title(), "H→γγ");
-}
-
-#[test]
-fn finding_needs_every_word_ignoring_case_and_marks() {
-    let e = Entry {
-        dir: "Gursey:1964".into(),
-        bib: bib(
-            "@article{Gursey:1964, author = {G{\\\"u}rsey, Feza and Radicati, Luigi}, title = {Spin and unitary spin}, \
-                  year = {1964}, keywords = {topic:flavour}, comment = {相関関数}}",
-        ),
-    };
-    for search in ["gursey 1964", "SPIN unitary", "F. Gürsey", "flavour", "相関", "gursey:1964", ""] {
-        assert!(e.matches(search), "{search:?}");
-    }
-    assert!(!e.matches("gursey 1965"));
 }
 
 #[test]
@@ -137,14 +106,4 @@ fn files_are_added_under_free_names_and_the_first_pdf_is_read() {
     assert_eq!(e.pdf(), Some(e.dir.join("paper-2.PDF")));
     let names: Vec<_> = fs::read_dir(&e.dir).unwrap().map(|f| f.unwrap().file_name()).collect();
     assert!(names.iter().all(|n| !n.to_string_lossy().starts_with('.')));
-}
-
-#[test]
-fn identifiers_are_inspire_queries() {
-    use refdir::fetch::query;
-    assert_eq!(query("https://inspirehep.net/literature/451647?ui-citation-summary=true"), "recid:451647");
-    assert_eq!(query("https://arxiv.org/abs/1207.7214v2"), "arxiv:1207.7214v2");
-    assert_eq!(query("https://arxiv.org/pdf/hep-th/9711200.pdf"), "arxiv:hep-th/9711200");
-    assert_eq!(query("https://doi.org/10.1103/PhysRevD.49.6587"), "doi:10.1103/PhysRevD.49.6587");
-    assert_eq!(query(" Maldacena:1997re "), "Maldacena:1997re");
 }

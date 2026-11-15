@@ -58,12 +58,17 @@ fn from_doi(doi: &str) -> Result<Bib, String> {
         if name.eq_ignore_ascii_case("month") {
             for chunk in value.iter_mut() {
                 if let Chunk::Macro(m) = chunk {
-                    *m = m.chars().take(3).collect::<String>().to_lowercase();
+                    *m = month(m);
                 }
             }
         }
     }
     Ok(bib)
+}
+
+/// A month as BibTeX's macro: `June` → `jun`
+pub fn month(name: &str) -> String {
+    name.chars().take(3).collect::<String>().to_lowercase()
 }
 
 /// The entry's paper again from INSPIRE, by its arXiv number or DOI, with its key, tags, and note

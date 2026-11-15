@@ -1,4 +1,4 @@
-# The refdir format
+# The Refdir format
 
 A library is a folder. Each entry is a folder directly in it, whose name is the entry's
 citation key, with one BibTeX entry in `entry.bib`:
@@ -25,5 +25,6 @@ citation key, with one BibTeX entry in `entry.bib`:
 - **The library's `.bib`** is every `entry.bib`, in key order, separated by empty lines.
 - Folders whose name starts with `.`, and folders without `entry.bib`, are not entries: they
   are free for other programs.
+- `tests/cases.json` has these rules as examples, which every Refdir program runs as tests.
 - A file is written through a temporary file starting with `.` in the same folder, then a
   rename, so that a reader never sees half of it.

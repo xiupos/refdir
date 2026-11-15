@@ -388,7 +388,7 @@ impl Component for App {
     view! {
         #[root]
         window = adw::ApplicationWindow {
-            set_title: Some("refdir"),
+            set_title: Some("Refdir"),
             set_default_size: (1280, 800),
             #[name = "toasts"]
             adw::ToastOverlay {
@@ -399,7 +399,7 @@ impl Component for App {
                     set_show_content: true,
                     #[wrap(Some)]
                     set_sidebar = &adw::NavigationPage {
-                        set_title: "refdir",
+                        set_title: "Refdir",
                         #[wrap(Some)]
                         set_child = &adw::ToolbarView {
                             add_top_bar = &adw::HeaderBar {
@@ -429,7 +429,7 @@ impl Component for App {
                     },
                     #[wrap(Some)]
                     set_content = &adw::NavigationPage {
-                        set_title: "refdir",
+                        set_title: "Refdir",
                         #[wrap(Some)]
                         set_child: inner = &adw::NavigationSplitView {
                             set_min_sidebar_width: 300.0,
@@ -516,7 +516,7 @@ impl Component for App {
     menu! {
         main_menu: {
             "Choose Library Folder…" => ChooseFolderAction,
-            "About refdir" => AboutAction,
+            "About Refdir" => AboutAction,
         }
     }
 
@@ -610,7 +610,7 @@ impl Component for App {
                 self.reload(widgets, &sender, true);
             }
             Msg::About => adw::AboutDialog::builder()
-                .application_name("refdir")
+                .application_name("Refdir")
                 .application_icon(APP_ID)
                 .version(env!("CARGO_PKG_VERSION"))
                 .comments("A library of references: a folder of BibTeX entries")

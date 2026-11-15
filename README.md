@@ -1,8 +1,9 @@
-# refdir
+# Refdir
 
 A library of references as a folder: one folder per entry, named by its citation key, with
 its BibTeX in `entry.bib` and its PDFs and other files beside it. The format is
-[FORMAT.md](FORMAT.md). Any program that reads a folder can read it, and any sync can carry it.
+[FORMAT.md](FORMAT.md), with its rules as examples in
+[tests/cases.json](tests/cases.json). Any program that reads a folder can read it, and any sync can carry it.
 
 Papers come from [INSPIRE-HEP](https://inspirehep.net) by their arXiv number, DOI, texkey, or
 link, or from doi.org for a DOI INSPIRE does not have; PDFs from arXiv.
@@ -22,9 +23,10 @@ refdir open Maldacena:1997re
 The library is `--library DIR` or `$REFDIR`. Exit status: 0, 1 when something was not found or
 not done, 2 when the command could not run.
 
-## The app
+## The apps
 
-`refdir-gtk`, for GNOME: the library by tag, finding as you type, adding by identifier, an
+`refdir-gtk`, for GNOME, and [RefdirApp](https://github.com/xiupos/RefdirApp), for iPhone and
+iPad: the library by tag, finding as you type, adding by identifier, an
 entry's tags, note, and files, reading or getting its PDF, editing its BibTeX, and exporting a
 `.bib`.
 

@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
-Name=refdir
+Name=Refdir
 Comment=Keep a library of references as a folder of files
 Exec=@bindir@/refdir-gtk
 Icon=net.xiupos.Refdir
