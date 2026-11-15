@@ -94,6 +94,7 @@ pub struct EntryPane {
 
 #[derive(Debug)]
 pub enum Msg {
+    CopyKey,
     /// The entry, read again
     Update(Box<Entry>),
     /// Read, or Get PDF
@@ -293,10 +294,12 @@ impl Component for EntryPane {
                                 #[watch]
                                 set_label: &model.info(),
                             },
-                            gtk::Box {
-                                set_spacing: 12,
+                            // Wrapped in a narrow pane
+                            adw::WrapBox {
+                                set_child_spacing: 12,
+                                set_line_spacing: 12,
                                 set_margin_top: 12,
-                                gtk::Button {
+                                append = &gtk::Button {
                                     add_css_class: "pill",
                                     add_css_class: "suggested-action",
                                     #[watch]
@@ -307,12 +310,18 @@ impl Component for EntryPane {
                                     set_sensitive: !model.getting_pdf,
                                     connect_clicked => Msg::Main,
                                 },
-                                gtk::Button {
+                                append = &gtk::Button {
+                                    set_label: "Copy Key",
+                                    set_tooltip_text: Some("Copy the citation key"),
+                                    add_css_class: "pill",
+                                    connect_clicked => Msg::CopyKey,
+                                },
+                                append = &gtk::Button {
                                     set_label: "Copy BibTeX",
                                     add_css_class: "pill",
                                     connect_clicked => Msg::CopyBibtex,
                                 },
-                                gtk::Button {
+                                append = &gtk::Button {
                                     set_label: "INSPIRE",
                                     add_css_class: "pill",
                                     #[watch]
@@ -450,6 +459,10 @@ impl Component for EntryPane {
                     sender.spawn_oneshot_command(move || Cmd::Pdf(fetch::pdf(&entry)));
                 }
             },
+            Msg::CopyKey => {
+                root.display().clipboard().set_text(self.entry.key());
+                self.toast(&sender, format!("{} copied", self.entry.key()));
+            }
             Msg::CopyBibtex => {
                 root.display().clipboard().set_text(&self.entry.bib.to_bibtex());
                 self.toast(&sender, "BibTeX copied".into());
