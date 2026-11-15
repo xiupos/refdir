@@ -103,7 +103,8 @@ Crates are renamed: `gtk` is gtk4 and `adw` is libadwaita. Check with `cargo tes
   arXiv). The note is saved when it loses focus, and when the pane goes: another entry opened,
   or the app closed. Edit BibTeX takes
   exactly one entry, and keeps the folder's key.
-- **Settings** are GSettings (`net.xiupos.Refdir`: `folder`, else `$REFDIR`; `sort`). Meson
+- **Settings** are GSettings (`net.xiupos.Refdir`: `folder`, else `$REFDIR`; `sort`; the
+  window's size, bound to its `default-width`, `default-height`, and `maximized`). Meson
   installs the schema; `build.rs` compiles it into the build. `settings()` takes the built one
   first, while it is there: an installed schema may be older, without a key the program reads,
   which GLib makes a crash.
@@ -162,4 +163,3 @@ Drive it with `xdotool`, and look with `DISPLAY=:99 import -window root /tmp/rv/
 
 - Exporting and choosing a folder with the file dialogs
 - Opening files and links in other apps
-- The search in GNOME Shell itself (only its D-Bus calls are tested)

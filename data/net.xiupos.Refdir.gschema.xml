@@ -17,5 +17,17 @@
       <summary>Order of the list</summary>
       <description>Newest first, by title, by first author, or by key.</description>
     </key>
+    <key name="window-width" type="i">
+      <default>1280</default>
+      <summary>Window width</summary>
+    </key>
+    <key name="window-height" type="i">
+      <default>800</default>
+      <summary>Window height</summary>
+    </key>
+    <key name="window-maximized" type="b">
+      <default>false</default>
+      <summary>Window maximized</summary>
+    </key>
   </schema>
 </schemalist>

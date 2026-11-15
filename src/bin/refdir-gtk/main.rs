@@ -564,7 +564,6 @@ impl Component for App {
         #[root]
         window = adw::ApplicationWindow {
             set_title: Some("Refdir"),
-            set_default_size: (1280, 800),
             #[name = "toasts"]
             adw::ToastOverlay {
                 #[name = "outer"]
@@ -735,6 +734,14 @@ impl Component for App {
         };
         let (places, list) = (model.places.widget(), &model.list.view);
         let widgets = view_output!();
+        // The window's size, as it was last
+        for (key, property) in [
+            ("window-width", "default-width"),
+            ("window-height", "default-height"),
+            ("window-maximized", "maximized"),
+        ] {
+            model.settings.bind(key, &root, property).build();
+        }
 
         // The entry goes over the list in a smaller window, and the list over the places in a
         // narrow one; the header bars' back buttons then walk back
