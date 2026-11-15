@@ -28,6 +28,7 @@ command without GTK.
 | `src/bin/refdir.rs` | The command |
 | `src/bin/refdir-gtk/main.rs` | The window: places (all, tags), the list, adding, the folder setting, watching the library |
 | `src/bin/refdir-gtk/entry.rs` | `EntryPane`: one entry |
+| `src/bin/refdir-gtk/search.rs` | GNOME Shell's search (`--search-provider`) |
 | `tests/cases.json`, `tests/cases.rs` | The format's rules as examples, shared with other programs, a section each |
 | `tests/library.rs` | The rules that need folders, on temporary folders |
 | `data/`, `build.rs`, `meson.build` | Icons, desktop entry, metainfo, the settings schema |
@@ -114,6 +115,14 @@ Crates are renamed: `gtk` is gtk4 and `adw` is libadwaita. Check with `cargo tes
   the trash after it. GIO cannot restore by itself; `untrash` finds in gvfs's `trash:///` the newest item whose
   `trash::orig-path` is the entry's folder and moves it back, as Files does, unless a folder is
   there again.
+- **GNOME Shell's search** is `refdir-gtk --search-provider`, a `gio::Application` of its own
+  (`net.xiupos.Refdir.SearchProvider`), started by D-Bus from the `.service` Meson installs:
+  relm4 makes the window at startup, which a search must not. It reads the library when a search
+  begins, narrows that, and ends 10 s after the last call. A result opens the PDF, or else the
+  folder; "more" opens the app. Try it without Shell: `dbus-run-session`, start it, and `gdbus
+  call --session --dest net.xiupos.Refdir.SearchProvider --object-path
+  /net/xiupos/Refdir/SearchProvider --method org.gnome.Shell.SearchProvider2.GetInitialResultSet
+  "['maldacena']"`.
 - **Toasts** have high priority, so that a new one replaces the one shown.
 
 ## Testing the app
@@ -148,3 +157,4 @@ Drive it with `xdotool`, and look with `DISPLAY=:99 import -window root /tmp/rv/
 
 - Exporting and choosing a folder with the file dialogs
 - Opening files and links in other apps
+- The search in GNOME Shell itself (only its D-Bus calls are tested)

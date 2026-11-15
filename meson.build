@@ -29,6 +29,14 @@ desktop = configure_file(
   install_dir: datadir / 'applications',
 )
 install_data('data' / id + '.metainfo.xml', install_dir: datadir / 'metainfo')
+# GNOME Shell's search: Shell reads the provider, and D-Bus starts the service it names
+install_data('data' / id + '.search-provider.ini', install_dir: datadir / 'gnome-shell' / 'search-providers')
+configure_file(
+  input: 'data' / id + '.SearchProvider.service.in',
+  output: id + '.SearchProvider.service',
+  configuration: {'bindir': get_option('prefix') / get_option('bindir')},
+  install_dir: datadir / 'dbus-1' / 'services',
+)
 install_data('data' / id + '.gschema.xml', install_dir: datadir / 'glib-2.0' / 'schemas')
 install_subdir('data' / 'icons' / 'hicolor', install_dir: datadir / 'icons')
 import('gnome').post_install(glib_compile_schemas: true, gtk_update_icon_cache: true, update_desktop_database: true)

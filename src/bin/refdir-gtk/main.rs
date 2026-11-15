@@ -2,6 +2,7 @@
 //! the places (all entries, and each tag), the place's entries, and the entry chosen
 
 mod entry;
+mod search;
 
 use adw::prelude::*;
 use entry::EntryPane;
@@ -1031,6 +1032,10 @@ impl Component for App {
     }
 }
 
-fn main() {
+fn main() -> glib::ExitCode {
+    if std::env::args().nth(1).as_deref() == Some("--search-provider") {
+        return search::run();
+    }
     relm4::RelmApp::new(APP_ID).run::<App>(());
+    glib::ExitCode::SUCCESS
 }
