@@ -255,7 +255,7 @@ private struct BibEditor: View {
 
 /// Quick Look, which saves markup into the file itself. Presented from UIKit: `quickLookPreview`
 /// cannot allow editing
-private struct PDFReader: UIViewControllerRepresentable {
+struct PDFReader: UIViewControllerRepresentable {
     @Binding var url: URL?
     /// Called when the markup has been saved
     let saved: () -> Void

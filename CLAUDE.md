@@ -96,8 +96,11 @@ Everything that imports SwiftUI needs the iPad.
 - **Adding** takes an identifier, or BibTeX (text starting with `@`), added as it is under the
   rules of adding (`addEntries`), for what INSPIRE and doi.org do not have. It is the alert's
   one-line field: BibTeX reads the same whether pasted line breaks are kept or made spaces.
-- **Copying** the key or the BibTeX is on the entry's page, and on a row's context menu, so that
-  a key is copied while writing without opening its entry. The page's buttons are on one line
+- **Menus on rows** (long press, or a right click on an iPad): an entry's Read, Share PDF, Copy
+  Key, Copy BibTeX, and Delete, so that a key is copied while writing without opening its entry;
+  a tag's Rename and Remove (`Store.retag`, refdir's `rename_tag`: a name some have already
+  merges the two; the place follows its tag). Copy Key and Copy BibTeX are on the entry's page
+  too. The page's buttons are on one line
   where they fit, else on two (`ViewThatFits`).
 - **Deleting** removes the entry's folder after asking: iOS has no trash for the user's folders.
 - **Exporting** shares a `.bib` written when it is shared (`BibFile`, a `FileRepresentation`).

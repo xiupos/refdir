@@ -478,6 +478,33 @@ func addEntries(_ folder: URL, _ bibs: [Bib]) -> (added: [Entry], refused: [(key
     return (added, refused)
 }
 
+/// Whether a text can be a tag: not blank, and without a comma, which separates tags
+func isTag(_ tag: String) -> Bool {
+    !tag.trimmed.isEmpty && !tag.contains(",")
+}
+
+/// Tags with `old` renamed to `new`, or removed if `new` is blank; a tag the list then has twice
+/// is kept in its first place. nil if it does not have `old`
+func renamed(_ tags: [String], _ old: String, _ new: String) -> [String]? {
+    guard tags.contains(old) else { return nil }
+    let new = new.trimmed
+    var out: [String] = []
+    for tag in tags.map({ $0 == old ? new : $0 }) where !tag.isEmpty && !out.contains(tag) {
+        out.append(tag)
+    }
+    return out
+}
+
+/// The entries that have the tag `old`, with it renamed to `new`, or removed if `new` is blank
+func renameTag(_ entries: [Entry], _ old: String, _ new: String) -> [Entry] {
+    entries.compactMap { entry in
+        guard let tags = renamed(entry.tags, old, new) else { return nil }
+        var entry = entry
+        entry.setTags(tags)
+        return entry
+    }
+}
+
 /// Every tag of the entries, by name, with how many have it
 func tagCounts(_ entries: [Entry]) -> [(tag: String, count: Int)] {
     var counts: [(tag: String, count: Int)] = []
@@ -1052,6 +1079,13 @@ enum Tests {
                 let keys = sortEntries(entries, by: order).map(\.key)
                 check(keys == c[order.rawValue] as! [String], "sort by \(order): \(keys)")
             }
+        }
+        for case let c as [String: Any] in section("rename_tag") {
+            let result = renamed(c["tags"] as! [String], c["old"] as! String, c["new"] as! String)
+            check(result == c["renamed"] as? [String], "renamed \(c): \(String(describing: result))")
+        }
+        for case let c as [Any] in section("is_tag") {
+            check(isTag(c[0] as! String) == (c[1] as! Bool), "tag \(c)")
         }
         folders()
         print("\(checks - failures)/\(checks) passed")

@@ -213,6 +213,19 @@ final class Store {
     func delete(_ entry: Entry) {
         change("the entry") { try FileManager.default.removeItem(at: entry.dir) }
     }
+
+    /// Renames a tag in every entry that has it, or removes it if `new` is blank. A name some have
+    /// already merges the two
+    func retag(_ old: String, _ new: String) {
+        guard new.trimmed.isEmpty || isTag(new) else {
+            error = "A tag cannot have a comma."
+            return
+        }
+        // Each entry as it is on disk now, as `edit` does
+        change("the tags") {
+            for entry in renameTag(entries.compactMap { try? Entry.read($0.dir) }, old, new) { try entry.write() }
+        }
+    }
 }
 
 /// Asks iCloud Drive for the `entry.bib`s not on the device, which it leaves as `.entry.bib.icloud`
@@ -299,6 +312,10 @@ private struct Places: View {
     @Environment(Store.self) private var store
     @Binding var place: Place?
     @State private var showingAbout = false
+    /// The tag being renamed, and its new name
+    @State private var renaming: String?
+    @State private var newName = ""
+    @State private var removing: String?
 
     var body: some View {
         List(selection: $place) {
@@ -311,6 +328,13 @@ private struct Places: View {
                         Label(t.tag, systemImage: "tag")
                             .badge(t.count)
                             .tag(Place.tag(t.tag))
+                            .contextMenu {
+                                Button("Rename Tag…", systemImage: "pencil") {
+                                    newName = t.tag
+                                    renaming = t.tag
+                                }
+                                Button("Remove Tag…", systemImage: "tag.slash", role: .destructive) { removing = t.tag }
+                            }
                     }
                 }
             }
@@ -329,6 +353,30 @@ private struct Places: View {
         } message: {
             Text("A library of references as a folder of BibTeX entries.\n\(store.folder?.lastPathComponent ?? "No folder")\(store.unreadable > 0 ? "\n\(store.unreadable) folders cannot be read." : "")")
         }
+        .alert("Rename Tag", isPresented: Binding { renaming != nil } set: { if !$0 { renaming = nil } }) {
+            TextField("Tag", text: $newName)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+            Button("Cancel", role: .cancel) {}
+            Button("Rename") {
+                guard let old = renaming else { return }
+                store.retag(old, newName)
+                // The place follows its tag
+                if place == .tag(old), isTag(newName) { place = .tag(newName.trimmed) }
+            }
+        } message: {
+            Text("Every entry with it is changed. A name some have already merges the two.")
+        }
+        .confirmationDialog("Remove “\(removing ?? "")”?",
+                            isPresented: Binding { removing != nil } set: { if !$0 { removing = nil } },
+                            titleVisibility: .visible) {
+            Button("Remove Tag", role: .destructive) {
+                if let tag = removing { store.retag(tag, "") }
+            }
+        } message: {
+            let n = store.tags.first { $0.tag == removing }?.count ?? 0
+            Text("It is removed from \(n == 1 ? "1 entry" : "\(n) entries"), which stay.")
+        }
         // A tag that is gone leaves its place
         .onChange(of: store.tags) { _, tags in
             if case .tag(let tag) = place, !tags.contains(where: { $0.tag == tag }) { place = .all }
@@ -345,6 +393,8 @@ private struct EntryList: View {
     @State private var adding = false
     @State private var identifier = ""
     @State private var fetching = false
+    @State private var reading: URL?
+    @State private var deleting: Entry?
 
     private var inPlace: [Row] { store.rows.filter { place.has($0.entry) } }
 
@@ -354,12 +404,17 @@ private struct EntryList: View {
         List(shown, selection: $selection) { row in
             EntryRow(row: row)
                 .tag(row.id)
-                // For writing: the key without opening the entry
+                // What the entry's page does most, without opening it: the key while writing
                 .contextMenu {
+                    if row.hasPDF, let pdf = row.entry.pdf() {
+                        Button("Read", systemImage: "book") { reading = pdf }
+                        ShareLink(item: pdf) { Label("Share PDF", systemImage: "square.and.arrow.up") }
+                    }
                     Button("Copy Key", systemImage: "doc.on.doc") { UIPasteboard.general.string = row.entry.key }
                     Button("Copy BibTeX", systemImage: "doc.on.clipboard") {
                         UIPasteboard.general.string = row.entry.bib.bibtex
                     }
+                    Button("Delete…", systemImage: "trash", role: .destructive) { deleting = row.entry }
                 }
         }
         .overlay {
@@ -378,6 +433,16 @@ private struct EntryList: View {
             } else if shown.isEmpty {
                 ContentUnavailableView.search(text: search)
             }
+        }
+        .background { PDFReader(url: $reading) { store.refresh() } }
+        .confirmationDialog("Delete \(deleting?.key ?? "")?",
+                            isPresented: Binding { deleting != nil } set: { if !$0 { deleting = nil } },
+                            titleVisibility: .visible) {
+            Button("Delete Entry and Its Files", role: .destructive) {
+                if let entry = deleting { store.delete(entry) }
+            }
+        } message: {
+            Text("Its folder is deleted, with its files.")
         }
         .searchable(text: $search)
         .refreshable { await store.reload() }
