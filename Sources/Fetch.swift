@@ -38,17 +38,17 @@ enum Fetch {
     /// The one paper an identifier finds: INSPIRE's BibTeX, or else, for a DOI, doi.org's
     static func find(_ id: String) async throws -> Bib {
         let q = inspireQuery(id)
+        if let bib = try await inspire(q, id) { return bib }
+        guard let doi = doiOf(query: q) else { throw Failure("INSPIRE finds nothing for \(id.trimmed).") }
+        return try await fromDOI(doi)
+    }
+
+    /// INSPIRE's one paper for a query, if it has one; `id` names it in errors
+    private static func inspire(_ q: String, _ id: String) async throws -> Bib? {
         let url = URL(string: "https://inspirehep.net/api/literature?q=\(percentEncoded(q))&size=2&format=bibtex")!
         let found = try parse(await get(url))
-        switch found.count {
-        case 1:
-            return found[0]
-        case 0:
-            guard let doi = doiOf(query: q) else { throw Failure("INSPIRE finds nothing for \(id.trimmed).") }
-            return try await fromDOI(doi)
-        default:
-            throw Failure("INSPIRE finds more than one paper for \(id.trimmed).")
-        }
+        guard found.count <= 1 else { throw Failure("INSPIRE finds more than one paper for \(id.trimmed).") }
+        return found.first
     }
 
     /// doi.org's BibTeX for a DOI, with its month as BibTeX's macro
@@ -61,10 +61,12 @@ enum Fetch {
         return normalizeMonths(bib)
     }
 
-    /// The entry's paper again from INSPIRE, by its arXiv number or DOI, with its key, tags, and note
+    /// The entry's paper again from INSPIRE, by its arXiv number or DOI, as `keepingOwn` keeps it.
+    /// Only INSPIRE's: doi.org's BibTeX may lack what the entry has
     static func again(_ entry: Entry) async throws -> Bib {
         guard let q = paperQuery(entry.bib) else { throw Failure("It has no arXiv number or DOI.") }
-        return keepingOwn(try await find(q), of: entry)
+        guard let bib = try await inspire(q, q) else { throw Failure("INSPIRE does not have it.") }
+        return try keepingOwn(bib, of: entry)
     }
 
     /// Downloads the entry's PDF from arXiv into its folder, as `<arXiv number>.pdf`

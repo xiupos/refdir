@@ -17,6 +17,7 @@ enum CoreError: LocalizedError {
     case same(String)
     case notKey(String)
     case noFreeKey
+    case lacks(String)
 
     var errorDescription: String? {
         switch self {
@@ -25,6 +26,7 @@ enum CoreError: LocalizedError {
         case .same(let key): "The library has it, as \(key)."
         case .notKey(let key): "“\(key)” cannot be a key."
         case .noFreeKey: "No free key."
+        case .lacks(let what): "INSPIRE's has no \(what): it stays as it is."
         }
     }
 }
@@ -689,8 +691,16 @@ func inspireURL(_ bib: Bib) -> URL? {
     paperQuery(bib).flatMap { URL(string: "https://inspirehep.net/search?p=\(percentEncoded($0))") }
 }
 
-/// The paper got again, with the entry's key, tags, and note
-func keepingOwn(_ new: Bib, of entry: Entry) -> Bib {
+/// The paper got again, with the entry's key, tags, and note. Refused if it lacks the title, or
+/// every name, that the entry has
+func keepingOwn(_ new: Bib, of entry: Entry) throws -> Bib {
+    let names = { (b: Bib) in b.get("author") ?? b.get("editor") }
+    if entry.bib.get("title") != nil && new.get("title") == nil {
+        throw CoreError.lacks("title")
+    }
+    if names(entry.bib) != nil && names(new) == nil {
+        throw CoreError.lacks("authors")
+    }
     var bib = new
     bib.key = entry.key
     for field in ["keywords", "comment"] {
@@ -1186,8 +1196,12 @@ enum Tests {
         check(doi.get("month") == "jun", "doi.org's month")
         check(inspireURL(added.bib)?.absoluteString == "https://inspirehep.net/search?p=doi%3A10.1%2Fx", "INSPIRE link")
         check(doiOf(query: "10.1103/X") == "10.1103/X" && doiOf(query: "1207.7214") == nil, "DOI query")
-        let kept = keepingOwn(try! Bib.parse("@article{New, title = {T}, keywords = {theirs}}")[0], of: added)
+        let kept = try! keepingOwn(try! Bib.parse("@article{New, title = {T}, keywords = {theirs}}")[0], of: added)
         check(kept.key == "minea" && kept.get("keywords") == "b, a, c" && kept.get("comment") == "Read §3.", "kept")
+        let book = Entry(dir: lib.appendingPathComponent("Mine"), bib: try! Bib.parse("@book{Mine, editor = {E}, title = {T}}")[0])
+        check((try? keepingOwn(try! Bib.parse("@book{X, author = {A}, title = {T2}}")[0], of: book)) != nil, "names as author")
+        check((try? keepingOwn(try! Bib.parse("@book{X, author = {A}}")[0], of: book)) == nil, "no title: refused")
+        check((try? keepingOwn(try! Bib.parse("@book{X, title = {T}}")[0], of: book)) == nil, "no names: refused")
     }
 }
 #endif
