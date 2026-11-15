@@ -22,12 +22,12 @@ Check with `cargo fmt`, `cargo clippy --all-targets` and `cargo test` (which run
 
 ## The lib crate
 
-- **heplio-gtk (`~/Projects/heplio-gtk`) depends on it** through git, and its `Cargo.lock` pins a commit: a change reaches it after `cargo update -p refdir` there. heplio-gtk is a fetching app and a library app: it writes `csl`, `tags`, and `note`, and copies BibTeX made by `bibtex`, which the CLI's `bib` makes too, so that both write the same `.bib`.
+- **Two apps depend on it** through git, each pinning a commit in its `Cargo.lock` (`cargo update -p refdir` there to move it): heplio-gtk (`~/Projects/heplio-gtk`), a fetching app, which writes `sources.inspire` and copies `bibtex::of`; and refdir-gtk (`~/Projects/refdir-gtk`), the library app, which writes `csl` (`edit_csl`), `tags`, and `note` (`set_note`), adds files (`add_file`), and exports with `bibtex::export`, the `.bib` that `bib` makes too. A rule both apps need lives here, with its test, not in either app.
 - **Only serde_json.** No CLI crates (clap, jsonschema, …). The API takes and returns `serde_json::Map` / `Value`; each app converts them to its own types.
 - **`preserve_order` is required**: the resolved item layers `sources` in the order of their keys in the file. The lib turns it on itself.
 - **`Error::NotV1` keeps `v`**, so that `check` can tell a later version (a warning: readers skip it) from a broken entry. `v` is compared as a number, so `1.0` is 1, as the schema's `const` has it.
 - **`resolved_field` / `Entry::field`** read one field without cloning the rest. `id()` and `Library::find` run for every entry on every lookup, so use them, not `resolved()`. A test checks that they agree with `resolve`.
-- **Writing reads the file again** just before writing (`write_field`, `edit_tags`): other apps may have changed it. The lib keeps no copy to write back.
+- **Writing reads the file again** just before writing (`write_field`, `edit_tags`, `set_note`, `edit_csl`): other apps may have changed it. The lib keeps no copy to write back.
 
 ## This implementation's choices
 
@@ -37,6 +37,12 @@ Check with `cargo fmt`, `cargo clippy --all-targets` and `cargo test` (which run
 - **Writing** goes through a `.` file in the same folder, then a rename (`write_atomic`).
 - **Several libraries**: `--library`, repeated, or `$REFDIR` split as `PATH`. The CLI joins their `entries` in order; the lib knows one library. Keys and INSPIRE records are checked across them, and `check` then names folders by path. A key in two of them: `bib` uses the first, warns, and exits with 1.
 - **`find`** searches the resolved `title`, `author` (every string part), `id`, and `note` (not `csl.note`).
+
+## Editing
+
+- **`edit_csl`** writes one key of the entry's own `csl`, which the resolved item shows over the sources. A value equal to the sources' resolved value, or empty, removes the key, so that the sources show through again; an empty `csl` is removed. A key (`id`) must pass `bibtex::is_key` and be free across the library (`id_taken`). How a field is typed (one author per line, `Family, Given`) is the app's.
+- **`set_note`**: the text as typed; a blank one removes `note`. `note` and `csl` of the wrong type are refused (`Error::Note`, `Error::Csl`), not written over.
+- **`add_file`** copies through a `.` file, then renames, to a free name: `-2`, `-3`, … before the extension, ignoring ASCII case.
 
 ## Tags
 

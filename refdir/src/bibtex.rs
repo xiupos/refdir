@@ -15,6 +15,29 @@ pub fn is_key(key: &str) -> bool {
     !key.is_empty() && key.chars().all(|c| c.is_ascii_alphanumeric() || "_:-".contains(c))
 }
 
+/// The entry's BibTeX, if its key is one ([`is_key`])
+pub fn of(entry: &crate::Entry) -> Option<String> {
+    let item = entry.resolved();
+    let key = item.get("id")?.as_str().filter(|k| is_key(k))?;
+    Some(self::entry(key, &item, entry.inspire_arxiv()))
+}
+
+/// The BibTeX of `entries`, in their order, separated by an empty line, and how many were left out:
+/// those without BibTeX, and those whose key an entry before them has, ignoring ASCII case
+pub fn export<'a>(entries: impl IntoIterator<Item = &'a crate::Entry>) -> (String, usize) {
+    let (mut keys, mut bibs, mut left): (Vec<&str>, Vec<String>, usize) = (Vec::new(), Vec::new(), 0);
+    for e in entries {
+        match (e.id(), of(e)) {
+            (Some(key), Some(bib)) if !keys.iter().any(|k| crate::same_id(k, key)) => {
+                keys.push(key);
+                bibs.push(bib);
+            }
+            _ => left += 1,
+        }
+    }
+    (bibs.join("\n"), left)
+}
+
 /// The BibTeX entry of a resolved item, ending with a line break. `arxiv` is
 /// `sources.inspire.arxiv`. The key is not checked: see [`is_key`]
 pub fn entry(key: &str, item: &Map<String, Value>, arxiv: Option<&str>) -> String {

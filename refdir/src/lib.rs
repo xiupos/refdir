@@ -33,6 +33,14 @@ pub enum Error {
     Tags,
     /// A tag to write is empty
     EmptyTag,
+    /// `note` is not a string, so it is not written over
+    Note,
+    /// `csl` is not an object, so it is not written over
+    Csl,
+    /// A citation key to write has a character outside `A–Z a–z 0–9 _ : -`
+    BadKey,
+    /// Another entry has the citation key to write, ignoring ASCII case
+    KeyTaken,
 }
 
 impl fmt::Display for Error {
@@ -45,6 +53,10 @@ impl fmt::Display for Error {
             Error::NotV1(Some(v)) => write!(f, "{ENTRY} has 'v' {v}, not 1"),
             Error::Tags => write!(f, "{ENTRY} has 'tags' that is not an array of strings"),
             Error::EmptyTag => write!(f, "a tag cannot be empty"),
+            Error::Note => write!(f, "{ENTRY} has a 'note' that is not a string"),
+            Error::Csl => write!(f, "{ENTRY} has a 'csl' that is not an object"),
+            Error::BadKey => write!(f, "a citation key can have only A–Z, a–z, 0–9, _, :, and -"),
+            Error::KeyTaken => write!(f, "another entry has this citation key"),
         }
     }
 }
@@ -395,6 +407,75 @@ pub fn remove_tag(dir: &Path, tag: &str) -> Result<Vec<String>, Error> {
         tags::remove(t, tag);
         Ok(())
     })
+}
+
+/// Reads the entry in `dir` again and writes `note`; a blank `text` removes it. A `note` that is not
+/// a string is not written over ([`Error::Note`]). Writes nothing if it is unchanged
+pub fn set_note(dir: &Path, text: &str) -> Result<(), Error> {
+    let data = read_entry(dir)?;
+    let new = (!text.trim().is_empty()).then(|| Value::from(text));
+    match data.get("note") {
+        Some(old) if !old.is_string() => Err(Error::Note),
+        old if old == new.as_ref() => Ok(()),
+        _ => put(dir, data, Field::Note, new.unwrap_or_default()),
+    }
+}
+
+/// Reads the entry in `dir` again and sets `key` of its own `csl` to `value`, which the resolved
+/// item then shows over the sources'. `None`, or the sources' value, removes it from `csl`. An
+/// `id` must be a BibTeX key ([`bibtex::is_key`]) that no other entry of `library` has. A `csl`
+/// that is not an object is not written over ([`Error::Csl`]). Writes nothing if it is unchanged
+pub fn edit_csl(library: &Path, dir: &Path, key: &str, value: Option<Value>) -> Result<(), Error> {
+    let data = read_entry(dir)?;
+    let mut csl = match data.get("csl") {
+        None => Map::new(),
+        Some(Value::Object(csl)) => csl.clone(),
+        Some(_) => return Err(Error::Csl),
+    };
+    let value = value.and_then(prune);
+    if let (true, Some(id)) = (key == "id", value.as_ref().and_then(Value::as_str)) {
+        if !bibtex::is_key(id) {
+            return Err(Error::BadKey);
+        }
+        if id_taken(library, id, Some(dir))? {
+            return Err(Error::KeyTaken);
+        }
+    }
+    let mut sources = data.clone();
+    sources.shift_remove("csl");
+    let theirs = resolved_field(&sources, key);
+    let old = csl.get(key).cloned();
+    match value.filter(|v| Some(v) != theirs) {
+        Some(v) => csl.insert(key.to_owned(), v),
+        None => csl.shift_remove(key),
+    };
+    if csl.get(key) == old.as_ref() {
+        return Ok(());
+    }
+    put(dir, data, Field::Csl, Value::Object(csl))
+}
+
+/// Adds a file to the readable entry in `dir`, named `name`, or with `-2`, `-3`, … before its
+/// extension if a file in the folder has that name, ignoring ASCII case. `copy` writes it to the
+/// path it is given, a `.` file that is then renamed. Returns the file's path
+pub fn add_file(
+    dir: &Path,
+    name: &str,
+    copy: impl FnOnce(&Path) -> io::Result<()>,
+) -> Result<PathBuf, Error> {
+    read_entry(dir)?;
+    let taken: Vec<String> = fs::read_dir(dir)?
+        .map(|e| e.map(|e| e.file_name().to_string_lossy().to_ascii_lowercase()))
+        .collect::<io::Result<_>>()?;
+    let (stem, ext) = match name.rsplit_once('.') {
+        Some((stem, ext)) if !stem.is_empty() => (stem, format!(".{ext}")),
+        _ => (name, String::new()),
+    };
+    let names = std::iter::once(name.to_owned()).chain((2..).map(|i| format!("{stem}-{i}{ext}")));
+    let path = dir.join(names.into_iter().find(|n| !taken.contains(&n.to_ascii_lowercase())).unwrap());
+    let tmp = dir.join(format!(".{name}.{}.tmp", std::process::id()));
+    copy(&tmp).and_then(|()| fs::rename(&tmp, &path)).inspect_err(|_| drop(fs::remove_file(&tmp)))?;
+    Ok(path)
 }
 
 /// `value` without its empty fields, recursively: `null`, `""`, `[]` and `{}`. `None` if it is

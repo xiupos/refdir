@@ -482,3 +482,86 @@ fn tags_are_ordered_without_a_namespace_first() {
     t.sort_by(|a, b| tags::cmp(a, b));
     assert_eq!(t, ["A", "z", "a:c", "a-b:c", "topic:A", "topic:b"]);
 }
+
+// MARK: - Notes, editing, files, BibTeX
+
+fn read(dir: &Path) -> Value {
+    serde_json::from_str(&fs::read_to_string(dir.join(ENTRY)).unwrap()).unwrap()
+}
+
+#[test]
+fn a_note_is_written_as_typed_and_a_blank_one_removes_it() {
+    let lib = TempDir::new().unwrap();
+    let dir = write_entry(lib.path(), "a", &json!({ "v": 1, "x": 1 }));
+    set_note(&dir, "  see §3\n").unwrap();
+    assert_eq!(read(&dir), json!({ "v": 1, "x": 1, "note": "  see §3\n" }));
+    set_note(&dir, " \n").unwrap();
+    assert_eq!(read(&dir), json!({ "v": 1, "x": 1 }));
+}
+
+#[test]
+fn a_note_that_is_not_a_string_is_not_written_over() {
+    let lib = TempDir::new().unwrap();
+    let dir = write_entry(lib.path(), "a", &json!({ "v": 1, "note": ["x"] }));
+    assert!(matches!(set_note(&dir, "y"), Err(Error::Note)));
+    assert_eq!(read(&dir)["note"], json!(["x"]));
+}
+
+#[test]
+fn an_edit_goes_in_the_own_csl_unless_it_is_the_sources_value() {
+    let lib = TempDir::new().unwrap();
+    let source = json!({ "v": 1, "sources": { "s": { "csl": { "id": "A:2000a", "title": "T" } } } });
+    let dir = write_entry(lib.path(), "a", &source);
+    edit_csl(lib.path(), &dir, "title", Some(json!("U"))).unwrap();
+    assert_eq!(read(&dir)["csl"], json!({ "title": "U" }));
+    edit_csl(lib.path(), &dir, "id", Some(json!("B:2001b"))).unwrap();
+    assert_eq!(read(&dir)["csl"], json!({ "title": "U", "id": "B:2001b" }));
+    edit_csl(lib.path(), &dir, "title", Some(json!("T"))).unwrap();
+    edit_csl(lib.path(), &dir, "id", None).unwrap();
+    assert_eq!(read(&dir), source);
+}
+
+#[test]
+fn an_edited_key_must_be_bibtex_and_free() {
+    let lib = TempDir::new().unwrap();
+    write_entry(lib.path(), "b", &json!({ "v": 1, "csl": { "id": "Taken:2000a" } }));
+    let dir = write_entry(lib.path(), "a", &json!({ "v": 1 }));
+    assert!(matches!(edit_csl(lib.path(), &dir, "id", Some(json!("a b"))), Err(Error::BadKey)));
+    assert!(matches!(edit_csl(lib.path(), &dir, "id", Some(json!("taken:2000A"))), Err(Error::KeyTaken)));
+    assert_eq!(read(&dir), json!({ "v": 1 }));
+}
+
+#[test]
+fn a_csl_that_is_not_an_object_is_not_written_over() {
+    let lib = TempDir::new().unwrap();
+    let dir = write_entry(lib.path(), "a", &json!({ "v": 1, "csl": 1 }));
+    assert!(matches!(edit_csl(lib.path(), &dir, "title", Some(json!("T"))), Err(Error::Csl)));
+}
+
+#[test]
+fn an_added_file_gets_a_free_name_ignoring_case() {
+    let lib = TempDir::new().unwrap();
+    let dir = write_entry(lib.path(), "a", &json!({ "v": 1 }));
+    fs::write(dir.join("Notes.tex"), "").unwrap();
+    let copy = |p: &Path| fs::write(p, "x");
+    assert_eq!(add_file(&dir, "notes.tex", copy).unwrap(), dir.join("notes-2.tex"));
+    assert_eq!(add_file(&dir, "notes.tex", copy).unwrap(), dir.join("notes-3.tex"));
+    assert_eq!(add_file(&dir, "README", copy).unwrap(), dir.join("README"));
+    assert_eq!(fs::read_to_string(dir.join("notes-2.tex")).unwrap(), "x");
+    let left: Vec<_> = fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name()).collect();
+    assert!(left.iter().all(|n| !n.to_string_lossy().starts_with('.')));
+}
+
+#[test]
+fn export_leaves_out_entries_without_bibtex_and_repeated_keys() {
+    let lib = TempDir::new().unwrap();
+    let p = lib.path();
+    write_entry(p, "a", &json!({ "v": 1, "csl": { "id": "A:2000a", "type": "article", "title": "T" } }));
+    write_entry(p, "b", &json!({ "v": 1, "csl": { "id": "a:2000A", "title": "U" } }));
+    write_entry(p, "c", &json!({ "v": 1, "csl": { "id": "bad key" } }));
+    write_entry(p, "d", &json!({ "v": 1, "csl": { "id": "D:2001d" } }));
+    let library = Library::read(p).unwrap();
+    let (text, left) = bibtex::export(&library.entries);
+    assert_eq!(left, 2);
+    assert_eq!(text, "@article{A:2000a,\n    title = {{T}},\n}\n\n@misc{D:2001d,\n}\n");
+}
