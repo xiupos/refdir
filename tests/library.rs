@@ -101,7 +101,7 @@ fn files_are_added_under_free_names_and_the_first_pdf_is_read() {
     assert_eq!(e.add_file(".hidden", b"x").unwrap(), e.dir.join("hidden"));
     assert_eq!(e.files().len(), 3);
     // The first PDF, after a file that is not one
-    assert_eq!(e.files()[0], Path::new("hidden"));
+    assert_eq!(e.files()[0], "hidden");
     assert_eq!(e.pdf(), Some(e.dir.join("paper-2.PDF")));
     let names: Vec<_> = fs::read_dir(&e.dir).unwrap().map(|f| f.unwrap().file_name()).collect();
     assert!(names.iter().all(|n| !n.to_string_lossy().starts_with('.')));

@@ -4,8 +4,8 @@ Refdir: a library of references as a folder of BibTeX entries (`FORMAT.md`), wit
 (`refdir`) and a GNOME app (`refdir-gtk`). What the code does not say by itself: the reasons
 behind decisions, pitfalls, and how to test the app.
 
-**Keep it small**: about 2,300 lines in all (`wc -l src/*.rs src/bin/*.rs src/bin/*/*.rs tests/*.rs`),
-never squeezing code to get there. A change of the format goes into `FORMAT.md` first, with
+**Keep it small** (`wc -l src/*.rs src/bin/*.rs src/bin/*/*.rs tests/*.rs`), never squeezing
+code to get there. A change of the format goes into `FORMAT.md` first, with
 examples in `tests/cases.json`.
 
 The name is Refdir; `refdir` is the command, the crate, and the folder names.
@@ -28,7 +28,7 @@ command without GTK.
 | `src/bin/refdir.rs` | The command |
 | `src/bin/refdir-gtk/main.rs` | The window: places (all, tags), the list, adding, the folder setting, watching the library |
 | `src/bin/refdir-gtk/entry.rs` | `EntryPane`: one entry |
-| `tests/cases.json`, `tests/cases.rs` | The format's rules as examples, shared with other programs: BibTeX, keys, names, plain text, tags, finding, adding, files, identifiers |
+| `tests/cases.json`, `tests/cases.rs` | The format's rules as examples, shared with other programs, a section each |
 | `tests/library.rs` | The rules that need folders, on temporary folders |
 | `data/`, `build.rs`, `meson.build` | Icons, desktop entry, metainfo, the settings schema |
 
@@ -37,9 +37,9 @@ Crates are renamed: `gtk` is gtk4 and `adw` is libadwaita. Check with `cargo tes
 
 ## Core
 
-- **BibTeX is the record.** Nothing is converted to another model: `Bib` keeps the fields in
-  their order and their values as written (text in braces, macros such as `jun` by name), so
-  that an entry read and written again is the same. biblatex's `RawBibliography` reads it; our
+- **BibTeX is the record.** `Bib` keeps the fields in their order and their values as written
+  (text in braces, macros such as `jun` by name), so that an entry read and written again is the
+  same. biblatex's `RawBibliography` reads it; our
   own `to_bibtex` writes it, one field a line, values in braces. biblatex's typed model is not
   used: it would rewrite values.
 - **The folder name is the key.** `Entry::read` sets the key to the folder's name, so that the
@@ -51,9 +51,8 @@ Crates are renamed: `gtk` is gtk4 and `adw` is libadwaita. Check with `cargo tes
   (`Takahashi_2006`) too.
 - **BibTeX is the other way in.** What INSPIRE and doi.org do not have (books, theses, notes) is
   added from its BibTeX, as it is, under the rules of adding: `refdir add` takes a `.bib` file
-  or `-`, and the app's add dialog takes text starting with `@`. No form for a new entry: Edit
-  BibTeX does that. A `.bib` argument is one that names a file; a texkey never ends in `.bib`.
-- **Fetching.** INSPIRE answers BibTeX itself (`format=bibtex`), so there is no JSON. An
+  or `-`, and the app's add dialog takes text starting with `@`. A `.bib` argument is one that names a file; a texkey never ends in `.bib`.
+- **Fetching.** INSPIRE is asked for BibTeX (`format=bibtex`). An
   identifier becomes INSPIRE's query (`fetch::query`): links to `recid:`, `arxiv:`, `doi:`;
   anything else as typed, since INSPIRE's search finds a bare arXiv number, DOI, or texkey.
   `size=2` tells one hit from many. A DOI INSPIRE does not have goes to doi.org, whose months
@@ -68,8 +67,8 @@ Crates are renamed: `gtk` is gtk4 and `adw` is libadwaita. Check with `cargo tes
 - **Plain text** (titles in the list) is techxt's (`refdir::plain`), pinned, as it is in
   alpha: check the titles after updating it. An odd `$` is escaped first, or math would run to
   the end.
-- **Finding** folds case and marks (NFD, without combining marks) on the title, names, key,
-  tags, and note, and needs every word.
+- **Finding** folds case and marks (NFD, without combining marks) on what `search_text` gathers,
+  and needs every word (`refdir::matches`, which the app runs on each row's text, made once).
 
 ## App
 
@@ -88,12 +87,14 @@ Crates are renamed: `gtk` is gtk4 and `adw` is libadwaita. Check with `cargo tes
 - **Menus on rows.** A right click, or a long press with a finger, opens a row's menu
   (`context_menu`, a `PopoverMenu` the row keeps): an entry's Read, Show in Files, Copy Key,
   Copy BibTeX, Move to Trash; a tag's Rename and Remove. Their actions are the window's, with
-  the key or the tag as their target, so that one menu model serves every row.
+  the key or the tag as their target, so that one menu model serves every row. The entry pane's
+  buttons for the same send them to the window too (`RowAction`), which does each in one place.
 - **Renaming a tag** (`refdir::rename_tag`) writes every entry that has it; a name some have
   already merges the two. The place follows the tag. A dialog opened from a menu focuses its
   field when shown (`connect_map`), as the menu gives focus back while closing.
 - **The entry pane**: the main button is Read (the first PDF), else Get PDF (from
-  arXiv). The note is saved when it loses focus and when the app closes. Edit BibTeX takes
+  arXiv). The note is saved when it loses focus, and when the pane goes: another entry opened,
+  or the app closed. Edit BibTeX takes
   exactly one entry, and keeps the folder's key.
 - **Settings** are GSettings (`net.xiupos.Refdir`: `folder`, else `$REFDIR`; `sort`). Meson
   installs the schema; `build.rs` compiles it into the build. `settings()` takes the built one
@@ -104,8 +105,7 @@ Crates are renamed: `gtk` is gtk4 and `adw` is libadwaita. Check with `cargo tes
 - **Pango markup.** `adw::ActionRow` titles are markup by default; rows with text from entries
   set `use_markup: false`, since titles contain `<` and `&`.
 - **Moving to the trash** asks nothing: the toast's Undo gives the entry back (`untrash`), and
-  the trash after it. Both menus send it to the window (`Msg::Trash`), which owns the toast.
-  GIO cannot restore by itself; `untrash` finds in gvfs's `trash:///` the newest item whose
+  the trash after it. GIO cannot restore by itself; `untrash` finds in gvfs's `trash:///` the newest item whose
   `trash::orig-path` is the entry's folder and moves it back, as Files does, unless a folder is
   there again.
 - **Toasts** have high priority, so that a new one replaces the one shown.

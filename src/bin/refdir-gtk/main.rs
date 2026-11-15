@@ -25,15 +25,6 @@ relm4::new_stateless_action!(ExportAction, WindowActions, "export");
 relm4::new_stateless_action!(AboutAction, WindowActions, "about");
 relm4::new_stateless_action!(QuitAction, WindowActions, "quit");
 
-pub fn boxed_list() -> gtk::ListBox {
-    gtk::ListBox::builder().selection_mode(gtk::SelectionMode::None).css_classes(["boxed-list"]).build()
-}
-
-/// A section's heading
-pub fn heading(title: &str) -> gtk::Label {
-    gtk::Label::builder().label(title).xalign(0.0).css_classes(["heading"]).build()
-}
-
 /// Opens a file in the app the user has for it, or shows it in its folder
 pub fn open_file(path: &Path, in_folder: bool, parent: &impl IsA<gtk::Widget>) {
     let window = parent.root().and_downcast::<gtk::Window>();
@@ -47,7 +38,7 @@ pub fn open_file(path: &Path, in_folder: bool, parent: &impl IsA<gtk::Widget>) {
 
 /// A menu that opens at the pointer on a right click, or on a long press with a finger. Kept by
 /// `widget`, which drops it with its children
-pub fn context_menu(widget: &impl IsA<gtk::Widget>) -> gtk::PopoverMenu {
+fn context_menu(widget: &impl IsA<gtk::Widget>) -> gtk::PopoverMenu {
     let menu = gtk::PopoverMenu::from_model(None::<&gio::MenuModel>);
     menu.set_parent(widget);
     menu.set_has_arrow(false);
@@ -88,9 +79,9 @@ fn menu(sections: &[&[(&str, &str, &str)]]) -> gio::Menu {
     menu
 }
 
-/// What a row of the list does with its entry
+/// What a row of the list, or the entry pane, does with an entry
 #[derive(Debug, Clone, Copy)]
-enum RowAction {
+pub enum RowAction {
     Read,
     ShowInFiles,
     CopyKey,
@@ -103,11 +94,9 @@ fn entries_count(n: usize) -> String {
     if n == 1 { "1 entry".into() } else { format!("{n} entries") }
 }
 
-/// The app's settings: its installed schema, or else the one `build.rs` compiles, so that the app
-/// runs from `cargo run` too
+/// The app's settings, by the schema `build.rs` compiles, which has this build's keys, while it is
+/// there; else by the installed one
 fn settings() -> gio::Settings {
-    // The schema built with this program, which has its keys, while its build is there; else the
-    // installed one
     let installed = gio::SettingsSchemaSource::default();
     let built = gio::SettingsSchemaSource::from_directory(env!("SCHEMA_DIR"), installed.as_ref(), false).ok();
     let schema = built.and_then(|s| s.lookup(APP_ID, false)).or_else(|| installed?.lookup(APP_ID, true));
@@ -285,7 +274,7 @@ struct App {
     settings: gio::Settings,
     folder: Option<PathBuf>,
     /// The entries, with their files, as last read: a reload rebuilds the lists only if they changed
-    read: Vec<(Entry, Vec<PathBuf>)>,
+    read: Vec<(Entry, Vec<String>)>,
     tags: Vec<(String, usize)>,
     find: Rc<RefCell<Find>>,
     places: FactoryVecDeque<PlaceRow>,
@@ -312,8 +301,6 @@ enum Msg {
     RemoveTag(String),
     /// Renames a tag in every entry that has it, or removes it if the new name is empty
     Retag(String, String),
-    /// Moves an entry's folder to the trash, and offers to undo it
-    Trash(PathBuf),
     /// Moves an entry's folder back from the trash
     Untrash(PathBuf),
     ChooseFolder,
@@ -336,8 +323,6 @@ enum Msg {
     Add,
     /// What the user typed or pasted to add: an identifier, or BibTeX
     Fetch(String),
-    /// BibTeX, to add as it is
-    Pasted(String),
 }
 
 #[derive(Debug)]
@@ -374,7 +359,7 @@ impl App {
         self.watch(sender);
         let mut library = self.folder.as_deref().and_then(|f| Library::read(f).ok()).unwrap_or_default();
         refdir::sort(&mut library.entries, Order::named(&self.settings.string("sort")));
-        let read: Vec<(Entry, Vec<PathBuf>)> = library
+        let read: Vec<(Entry, Vec<String>)> = library
             .entries
             .into_iter()
             .map(|e| {
@@ -461,7 +446,21 @@ impl App {
                 WidgetExt::display(root).clipboard().set_text(&entry.bib.to_bibtex());
                 toast(&widgets.toasts, "BibTeX copied");
             }
-            RowAction::Trash => sender.input(Msg::Trash(entry.dir.clone())),
+            // Without asking: the toast's Undo, or the trash, gives it back
+            RowAction::Trash => match gio::File::for_path(&entry.dir).trash(gio::Cancellable::NONE) {
+                Ok(()) => {
+                    let toast = adw::Toast::builder()
+                        .title("Moved to the trash")
+                        .button_label("Undo")
+                        .priority(adw::ToastPriority::High)
+                        .build();
+                    let (s, dir) = (sender.clone(), entry.dir.clone());
+                    toast.connect_button_clicked(move |_| s.input(Msg::Untrash(dir.clone())));
+                    widgets.toasts.add_toast(toast);
+                    self.reload(widgets, sender, false);
+                }
+                Err(e) => toast(&widgets.toasts, &format!("Could not move to the trash: {e}")),
+            },
         }
     }
 
@@ -473,7 +472,7 @@ impl App {
                 EntryPane::builder().launch(entry).forward(sender.input_sender(), |output| match output {
                     entry::Output::Toast(text) => Msg::Toast(text),
                     entry::Output::Changed => Msg::Reload,
-                    entry::Output::Trash(dir) => Msg::Trash(dir),
+                    entry::Output::Row(action, key) => Msg::Row(action, key),
                     entry::Output::OpenTag(tag) => Msg::OpenTag(tag),
                 });
             widgets.entry_page.set_child(Some(pane.widget()));
@@ -715,8 +714,7 @@ impl Component for App {
         let f = find.clone();
         list.add_filter(move |item: &EntryItem| {
             let find = f.borrow();
-            find.in_place(&item.entry)
-                && refdir::fold(&find.search).split_whitespace().all(|w| item.text.contains(w))
+            find.in_place(&item.entry) && refdir::matches(&item.text, &find.search)
         });
         let mut model = App {
             folder: folder(&settings),
@@ -853,21 +851,6 @@ impl Component for App {
                 });
                 dialog.present(Some(root));
             }
-            // Without asking: the toast's Undo, or the trash, gives it back
-            Msg::Trash(dir) => match gio::File::for_path(&dir).trash(gio::Cancellable::NONE) {
-                Ok(()) => {
-                    let toast = adw::Toast::builder()
-                        .title("Moved to the trash")
-                        .button_label("Undo")
-                        .priority(adw::ToastPriority::High)
-                        .build();
-                    let s = sender.clone();
-                    toast.connect_button_clicked(move |_| s.input(Msg::Untrash(dir.clone())));
-                    widgets.toasts.add_toast(toast);
-                    self.reload(widgets, &sender, false);
-                }
-                Err(e) => toast(&widgets.toasts, &format!("Could not move to the trash: {e}")),
-            },
             Msg::Untrash(dir) => match untrash(&dir) {
                 Ok(()) => {
                     self.reload(widgets, &sender, false);
@@ -994,16 +977,13 @@ impl Component for App {
                 dialog.set_focus(Some(&field));
             }
             Msg::Fetch(id) => {
+                // BibTeX is added as it is
                 if id.trim_start().starts_with('@') {
-                    sender.input(Msg::Pasted(id));
+                    let bibs = Bib::parse(&id).map_err(|e| e.to_string());
+                    return self.update_cmd_with_view(widgets, Cmd::Fetched(bibs), sender.clone(), root);
                 } else if !id.trim().is_empty() {
                     sender.spawn_oneshot_command(move || Cmd::Fetched(fetch::find(&id).map(|b| vec![b])));
                 }
-            }
-            Msg::Pasted(text) => {
-                let bibs = Bib::parse(&text).map_err(|e| e.to_string());
-                self.update_cmd_with_view(widgets, Cmd::Fetched(bibs), sender.clone(), root);
-                return;
             }
         }
         self.update_view(widgets, sender);

@@ -146,16 +146,14 @@ impl Entry {
     }
 
     /// The other files of the folder, but those starting with `.`, by name
-    pub fn files(&self) -> Vec<PathBuf> {
-        let names = fs::read_dir(&self.dir).into_iter().flatten().flatten().map(|e| e.file_name());
-        let names = names.map(|n| n.to_string_lossy().into_owned()).filter(|n| self.dir.join(n).is_file());
-        files(names.collect()).into_iter().map(PathBuf::from).collect()
+    pub fn files(&self) -> Vec<String> {
+        let names = folder_names(&self.dir).unwrap_or_default();
+        files(names.into_iter().filter(|n| self.dir.join(n).is_file()).collect())
     }
 
     /// The first PDF of its files, by name
     pub fn pdf(&self) -> Option<PathBuf> {
-        let pdf = self.files().into_iter().find(|f| is_pdf(&f.to_string_lossy()))?;
-        Some(self.dir.join(pdf))
+        self.files().into_iter().find(|f| is_pdf(f)).map(|f| self.dir.join(f))
     }
 
     /// Copies a file into the folder, named `name`, or with `-2`, `-3`, … before its extension if a
@@ -174,13 +172,22 @@ impl Entry {
     /// The authors, or else the editors, by their short names: `J.M. Maldacena`. `others` is not
     /// one
     pub fn names(&self) -> Vec<String> {
-        let list = self.bib.get("author").or_else(|| self.bib.get("editor")).unwrap_or_default();
-        split_and(&list).into_iter().filter(|n| *n != "others").map(short_name).collect()
+        split_and(&self.name_list()).into_iter().filter(|n| *n != "others").map(short_name).collect()
+    }
+
+    /// Whether the names end with `and others`
+    pub fn has_others(&self) -> bool {
+        split_and(&self.name_list()).last() == Some(&"others")
+    }
+
+    /// The authors, or else the editors, as written
+    fn name_list(&self) -> String {
+        self.bib.get("author").or_else(|| self.bib.get("editor")).unwrap_or_default()
     }
 
     /// The first author's (or editor's) family name, as plain text; a name in braces whole
-    pub fn first_family(&self) -> Option<String> {
-        let list = self.bib.get("author").or_else(|| self.bib.get("editor"))?;
+    fn first_family(&self) -> Option<String> {
+        let list = self.name_list();
         let first = *split_and(&list).first()?;
         let braced = first.starts_with('{') && first.ends_with('}');
         Some(plain(if braced { first } else { family_given(first).0 })).filter(|f| !f.is_empty())
@@ -188,7 +195,7 @@ impl Entry {
 
     /// The first author's short name, and ` et al.` if there are more
     pub fn byline(&self) -> String {
-        let list = self.bib.get("author").or_else(|| self.bib.get("editor")).unwrap_or_default();
+        let list = self.name_list();
         let names = split_and(&list);
         let first = names.first().map(|n| short_name(n)).unwrap_or_default();
         if names.len() > 1 { format!("{first} et al.") } else { first }
@@ -199,8 +206,8 @@ impl Entry {
         self.bib.get("year").or(date)
     }
 
-    /// What finding looks in, folded: the title, the names, the key, the journal, the year, the
-    /// tags, and the note
+    /// What finding looks in, folded: the title, the names, the key, the year, the journal, the
+    /// DOI and arXiv number, the tags, and the note
     pub fn search_text(&self) -> String {
         let fields =
             ["title", "author", "editor", "journal", "booktitle", "doi", "eprint", "keywords", "comment"];
@@ -212,8 +219,7 @@ impl Entry {
 
     /// Whether every word of `search`, folded, is in its text
     pub fn matches(&self, search: &str) -> bool {
-        let text = self.search_text();
-        fold(search).split_whitespace().all(|w| text.contains(w))
+        matches(&self.search_text(), search)
     }
 }
 
@@ -244,11 +250,6 @@ impl Library {
     /// The entry with a key, ignoring ASCII case
     pub fn find(&self, key: &str) -> Option<&Entry> {
         self.entries.iter().find(|e| e.key().eq_ignore_ascii_case(key))
-    }
-
-    /// The entry that is the same paper as `bib`: by its DOI, or its arXiv number
-    pub fn same(&self, bib: &Bib) -> Option<&Entry> {
-        same(&self.entries, bib)
     }
 }
 
@@ -298,7 +299,7 @@ pub fn rename_tag(entries: &[Entry], old: &str, new: &str) -> Vec<Entry> {
 }
 
 /// Adds an entry to the library for `bib`, by its key, or with `a`, `b`, … after it if an entry has
-/// it. Refuses a paper the library has (`Library::same`)
+/// it. Refuses a paper the library has (`same`)
 pub fn add(folder: &Path, mut bib: Bib) -> io::Result<Entry> {
     let library = Library::read(folder)?;
     bib.key = new_key(&library.entries, &folder_names(folder)?, &bib)?;
@@ -315,7 +316,7 @@ pub fn bibtex<'a>(entries: impl IntoIterator<Item = &'a Entry>) -> String {
 }
 
 /// Writes a file through a `.` file next to it, then a rename
-pub fn write_atomic(path: &Path, data: &[u8]) -> io::Result<()> {
+fn write_atomic(path: &Path, data: &[u8]) -> io::Result<()> {
     let tmp = path.with_file_name(format!(".{}.{}.tmp", name(path), std::process::id()));
     fs::write(&tmp, data)?;
     fs::rename(&tmp, path).inspect_err(|_| drop(fs::remove_file(&tmp)))
@@ -330,7 +331,7 @@ fn invalid(message: String) -> io::Error {
 }
 
 /// The entry that is the same paper as `bib`: by its DOI, or its arXiv number, ignoring ASCII case
-pub fn same<'a>(entries: &'a [Entry], bib: &Bib) -> Option<&'a Entry> {
+fn same<'a>(entries: &'a [Entry], bib: &Bib) -> Option<&'a Entry> {
     let same = |f: &str| {
         let value = bib.get(f)?;
         entries.iter().find(|e| e.bib.get(f).is_some_and(|v| v.eq_ignore_ascii_case(&value)))
@@ -400,6 +401,11 @@ impl Order {
     pub fn named(name: &str) -> Order {
         Order::ALL.iter().find(|(_, n)| *n == name).map_or(Order::Key, |(o, _)| *o)
     }
+}
+
+/// Whether every word of `search`, folded, is in `text`, folded already (`Entry::search_text`)
+pub fn matches(text: &str, search: &str) -> bool {
+    fold(search).split_whitespace().all(|w| text.contains(w))
 }
 
 /// Sorts entries: by year, newest first; by title or by the first author's family name, folded; or

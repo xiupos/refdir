@@ -1,14 +1,14 @@
 //! `EntryPane`: an entry, its tags, note, and files, and what the user does with it: read its PDF or
 //! get it, copy or edit its BibTeX, get it again from INSPIRE, or move it to the trash
 
-use crate::{boxed_list, heading, open_file};
+use crate::{RowAction, open_file};
 use adw::prelude::*;
 use gtk::{gdk, gio};
 use refdir::{Bib, Entry, fetch};
 use relm4::actions::{RelmAction, RelmActionGroup};
 use relm4::factory::{DynamicIndex, FactoryComponent, FactorySender, FactoryVecDeque};
 use relm4::prelude::*;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 relm4::new_action_group!(EntryActions, "entry");
 relm4::new_stateless_action!(EditAction, EntryActions, "edit");
@@ -16,18 +16,27 @@ relm4::new_stateless_action!(AgainAction, EntryActions, "again");
 relm4::new_stateless_action!(ShowInFilesAction, EntryActions, "show-in-files");
 relm4::new_stateless_action!(TrashAction, EntryActions, "trash");
 
+fn boxed_list() -> gtk::ListBox {
+    gtk::ListBox::builder().selection_mode(gtk::SelectionMode::None).css_classes(["boxed-list"]).build()
+}
+
+/// A section's heading
+fn heading(title: &str) -> gtk::Label {
+    gtk::Label::builder().label(title).xalign(0.0).css_classes(["heading"]).build()
+}
+
 /// A tag of the entry, with a button that removes it. The row opens the tag's place
-pub struct TagRow {
+struct TagRow {
     tag: String,
 }
 
 #[derive(Debug)]
-pub enum TagOutput {
+enum TagOutput {
     Open(String),
     Remove(String),
 }
 
-#[relm4::factory(pub)]
+#[relm4::factory]
 impl FactoryComponent for TagRow {
     type Init = String;
     type Input = ();
@@ -56,14 +65,14 @@ impl FactoryComponent for TagRow {
     }
 }
 
-/// A file of the entry, with its kind's icon
-pub struct FileRow {
-    file: PathBuf,
+/// A file of the entry, by name, with its kind's icon
+struct FileRow {
+    file: String,
 }
 
-#[relm4::factory(pub)]
+#[relm4::factory]
 impl FactoryComponent for FileRow {
-    type Init = PathBuf;
+    type Init = String;
     type Input = ();
     type Output = ();
     type CommandOutput = ();
@@ -71,14 +80,14 @@ impl FactoryComponent for FileRow {
 
     view! {
         adw::ActionRow {
-            set_title: &self.file.to_string_lossy(),
+            set_title: &self.file,
             set_use_markup: false,
             set_activatable: true,
-            add_prefix = &gtk::Image::from_gicon(&gio::content_type_get_symbolic_icon(&gio::content_type_guess(Some(&self.file), None).0)),
+            add_prefix = &gtk::Image::from_gicon(&gio::content_type_get_symbolic_icon(&gio::content_type_guess(Some(Path::new(&self.file)), None).0)),
         }
     }
 
-    fn init_model(file: PathBuf, _: &DynamicIndex, _: FactorySender<Self>) -> Self {
+    fn init_model(file: String, _: &DynamicIndex, _: FactorySender<Self>) -> Self {
         FileRow { file }
     }
 }
@@ -94,12 +103,12 @@ pub struct EntryPane {
 
 #[derive(Debug)]
 pub enum Msg {
-    CopyKey,
+    /// Copy, show in Files, or move to the trash: the window does them, for the list's rows too
+    Row(RowAction),
     /// The entry, read again
     Update(Box<Entry>),
     /// Read, or Get PDF
     Main,
-    CopyBibtex,
     OpenInspire,
     AddTag(String),
     RemoveTag(String),
@@ -112,8 +121,6 @@ pub enum Msg {
     /// The edited BibTeX
     Edited(String),
     Again,
-    ShowInFiles,
-    Trash,
 }
 
 #[derive(Debug)]
@@ -121,8 +128,7 @@ pub enum Output {
     Toast(String),
     /// The entry changed
     Changed,
-    /// Move the entry to the trash: the window does, as its toast can undo it
-    Trash(PathBuf),
+    Row(RowAction, String),
     OpenTag(String),
 }
 
@@ -195,6 +201,16 @@ impl EntryPane {
     }
 
     /// Writes the entry, and tells the app; or says why it could not
+    /// Sets the note, if it changed; whether it did
+    fn set_note(&mut self, note: String) -> bool {
+        let changed = note != self.note;
+        if changed {
+            self.entry.set_note(&note);
+            self.note = note;
+        }
+        changed
+    }
+
     fn write(&self, sender: &ComponentSender<Self>) {
         match self.entry.write() {
             Ok(()) => drop(sender.output(Output::Changed)),
@@ -222,11 +238,9 @@ impl EntryPane {
 
     fn names(&self) -> String {
         let names = self.entry.names();
-        let b = &self.entry.bib;
-        let others = b.get("author").or_else(|| b.get("editor")).is_some_and(|l| l.ends_with(" and others"));
         let more = match names.len() {
             n if n > 10 => format!(" and {} more", n - 10),
-            _ if others => " et al.".to_owned(),
+            _ if self.entry.has_others() => " et al.".to_owned(),
             _ => String::new(),
         };
         format!("{}{more}", names.iter().take(10).cloned().collect::<Vec<_>>().join(", "))
@@ -316,12 +330,12 @@ impl Component for EntryPane {
                                     set_label: "Copy Key",
                                     set_tooltip_text: Some("Copy the citation key"),
                                     add_css_class: "pill",
-                                    connect_clicked => Msg::CopyKey,
+                                    connect_clicked => Msg::Row(RowAction::CopyKey),
                                 },
                                 append = &gtk::Button {
                                     set_label: "Copy BibTeX",
                                     add_css_class: "pill",
-                                    connect_clicked => Msg::CopyBibtex,
+                                    connect_clicked => Msg::Row(RowAction::CopyBibtex),
                                 },
                                 append = &gtk::Button {
                                     set_label: "INSPIRE",
@@ -430,8 +444,10 @@ impl Component for EntryPane {
         };
         actions.add_action(RelmAction::<EditAction>::new_stateless(action(|| Msg::Edit)));
         actions.add_action(RelmAction::<AgainAction>::new_stateless(action(|| Msg::Again)));
-        actions.add_action(RelmAction::<ShowInFilesAction>::new_stateless(action(|| Msg::ShowInFiles)));
-        actions.add_action(RelmAction::<TrashAction>::new_stateless(action(|| Msg::Trash)));
+        actions.add_action(RelmAction::<ShowInFilesAction>::new_stateless(action(|| {
+            Msg::Row(RowAction::ShowInFiles)
+        })));
+        actions.add_action(RelmAction::<TrashAction>::new_stateless(action(|| Msg::Row(RowAction::Trash))));
         actions.register_for_widget(&root);
         ComponentParts { model, widgets }
     }
@@ -461,14 +477,7 @@ impl Component for EntryPane {
                     sender.spawn_oneshot_command(move || Cmd::Pdf(fetch::pdf(&entry)));
                 }
             },
-            Msg::CopyKey => {
-                root.display().clipboard().set_text(self.entry.key());
-                self.toast(&sender, format!("{} copied", self.entry.key()));
-            }
-            Msg::CopyBibtex => {
-                root.display().clipboard().set_text(&self.entry.bib.to_bibtex());
-                self.toast(&sender, "BibTeX copied".into());
-            }
+            Msg::Row(action) => drop(sender.output(Output::Row(action, self.entry.key().to_owned()))),
             Msg::OpenInspire => {
                 if let Some(url) = fetch::inspire_url(&self.entry.bib) {
                     let window = root.root().and_downcast::<gtk::Window>();
@@ -491,10 +500,7 @@ impl Component for EntryPane {
             }
             Msg::OpenTag(tag) => drop(sender.output(Output::OpenTag(tag))),
             Msg::SaveNote => {
-                let note = text(&widgets.note);
-                if note != self.note {
-                    self.entry.set_note(&note);
-                    self.note = note;
+                if self.set_note(text(&widgets.note)) {
                     self.write(&sender);
                 }
             }
@@ -545,9 +551,6 @@ impl Component for EntryPane {
                 let entry = self.entry.clone();
                 sender.spawn_oneshot_command(move || Cmd::Again(fetch::again(&entry).map(Box::new)));
             }
-            Msg::ShowInFiles => open_file(&self.entry.dir.join(refdir::ENTRY), true, root),
-            // The trash is the undo
-            Msg::Trash => drop(sender.output(Output::Trash(self.entry.dir.clone()))),
         }
         self.update_view(widgets, sender);
     }
@@ -574,12 +577,8 @@ impl Component for EntryPane {
     }
 
     fn shutdown(&mut self, widgets: &mut Self::Widgets, output: relm4::Sender<Output>) {
-        let note = text(&widgets.note);
-        if note != self.note {
-            self.entry.set_note(&note);
-            if self.entry.write().is_err() {
-                output.send(Output::Toast("Could not write the note".into())).ok();
-            }
+        if self.set_note(text(&widgets.note)) && self.entry.write().is_err() {
+            output.send(Output::Toast("Could not write the note".into())).ok();
         }
     }
 }

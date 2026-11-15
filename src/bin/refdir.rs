@@ -73,20 +73,9 @@ fn main() -> ExitCode {
         eprintln!("refdir: skipped {}: {e}", dir.display());
     }
     let result = match cli.command {
-        Command::Add { ids, pdf } => {
-            // Every one is tried, whether those before it were added or not
-            let added: Vec<bool> = ids
-                .iter()
-                .map(|id| {
-                    if is_bib(id) {
-                        add_file(&cli.library, id, pdf)
-                    } else {
-                        add(&cli.library, id, None, pdf)
-                    }
-                })
-                .collect();
-            Ok(added.iter().all(|&a| a))
-        }
+        Command::Add { ids, pdf } => Ok(all(ids.iter().map(|id| {
+            if is_bib(id) { add_file(&cli.library, id, pdf) } else { add(&cli.library, id, None, pdf) }
+        }))),
         Command::Bib { aux } => bib(&cli.library, library, aux.as_deref()),
         Command::Update { keys } => update(&library, &keys),
         Command::Ls => Ok(list(library.entries.iter())),
@@ -126,6 +115,11 @@ fn out(text: &str) {
 
 fn found<'a>(library: &'a Library, key: &str) -> Result<&'a Entry, String> {
     library.find(key).ok_or(format!("no entry has the key {key}"))
+}
+
+/// Whether every one is true; every one is tried, whether those before it were or not
+fn all(results: impl Iterator<Item = bool>) -> bool {
+    results.fold(true, |all, ok| all & ok)
 }
 
 fn list<'a>(entries: impl Iterator<Item = &'a Entry>) -> bool {
@@ -170,9 +164,7 @@ fn add_file(folder: &Path, path: &str, pdf: bool) -> bool {
             false
         }
         // Every one is tried
-        Ok(bibs) => {
-            bibs.into_iter().map(|bib| add_bib(folder, &bib.key.clone(), bib, pdf)).fold(true, |a, b| a & b)
-        }
+        Ok(bibs) => all(bibs.into_iter().map(|bib| add_bib(folder, &bib.key.clone(), bib, pdf))),
         Err(e) => {
             eprintln!("refdir: {path}: {e}");
             false
