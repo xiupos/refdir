@@ -34,6 +34,8 @@ struct Row: Identifiable {
     let hasPDF: Bool
     /// What finding looks in, folded
     let text: String
+    /// What it is sorted by, in each order
+    let sortKeys: [Order: SortKey]
     var id: String { entry.key }
 
     init(_ entry: Entry) {
@@ -42,6 +44,7 @@ struct Row: Identifiable {
         subtitle = [entry.byline, entry.year ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")
         hasPDF = entry.pdf() != nil
         text = entry.searchText
+        sortKeys = Dictionary(uniqueKeysWithValues: Order.allCases.map { ($0, SortKey(entry, $0)) })
     }
 }
 
@@ -54,7 +57,15 @@ final class Store {
     private(set) var folder: URL?
     /// By key
     private(set) var entries: [Entry] = []
+    /// In `order`
     private(set) var rows: [Row] = []
+    /// How the list is sorted, kept for the next time
+    var order: Order {
+        didSet {
+            defaults.set(order.rawValue, forKey: "order")
+            rows = sorted(rows)
+        }
+    }
     private(set) var tags: [TagCount] = []
     /// The folders with an `entry.bib` that cannot be read
     private(set) var unreadable = 0
@@ -68,6 +79,7 @@ final class Store {
     private var started = 0
 
     init() {
+        order = Order(rawValue: UserDefaults.standard.string(forKey: "order") ?? "") ?? .year
         guard let bookmark = defaults.data(forKey: "folder") else { return }
         var stale = false
         if let url = try? URL(resolvingBookmarkData: bookmark, bookmarkDataIsStale: &stale) {
@@ -113,12 +125,16 @@ final class Store {
         switch read {
         case .success(let (library, read)):
             entries = library.entries
-            rows = read
+            rows = sorted(read)
             tags = tagCounts(library.entries).map { TagCount(tag: $0.tag, count: $0.count) }
             unreadable = library.unreadable.count
         case .failure:
             error = "The library folder cannot be read."
         }
+    }
+
+    private func sorted(_ rows: [Row]) -> [Row] {
+        rows.sorted { $0.sortKeys[order]! < $1.sortKeys[order]! }
     }
 
     /// Reads the folder again, without waiting for it
@@ -326,6 +342,7 @@ private struct EntryList: View {
     private var inPlace: [Row] { store.rows.filter { place.has($0.entry) } }
 
     var body: some View {
+        @Bindable var store = store
         let shown = inPlace.filter { hasWords($0.text, search) }
         List(shown, selection: $selection) { row in
             EntryRow(row: row).tag(row.id)
@@ -360,6 +377,13 @@ private struct EntryList: View {
                         adding = true
                     }
                     .keyboardShortcut("n")
+                }
+                Menu {
+                    Picker("Sort", selection: $store.order) {
+                        ForEach(Order.allCases) { Text($0.label).tag($0) }
+                    }
+                } label: {
+                    Label("Sort", systemImage: "arrow.up.arrow.down")
                 }
                 ShareLink(item: BibFile(name: place.title, text: bibtex(inPlace.map(\.entry.bib))),
                           preview: SharePreview("\(place.title).bib")) {

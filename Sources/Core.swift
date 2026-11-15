@@ -301,6 +301,14 @@ struct Entry: Hashable, Identifiable {
     /// Whether the list of names ends with `and others`
     var hasOthers: Bool { nameList.last == "others" }
 
+    /// The first author's (or editor's) family name, as plain text; a name in braces whole
+    var firstFamily: String? {
+        guard let first = nameList.first else { return nil }
+        let braced = first.hasPrefix("{") && first.hasSuffix("}")
+        let family = plain(braced ? first : familyGiven(first).family)
+        return family.isEmpty ? nil : family
+    }
+
     /// The first author's short name, and ` et al.` if there are more
     var byline: String {
         let names = nameList
@@ -391,6 +399,70 @@ func addEntry(_ folder: URL, _ bib: Bib) throws -> Entry {
     let entry = Entry(dir: dir, bib: bib)
     try entry.write()
     return entry
+}
+
+/// How entries are listed
+enum Order: String, CaseIterable, Identifiable {
+    /// Newest first
+    case year
+    case title
+    /// By the first author's family name
+    case author
+    case key
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .year: "Newest First"
+        case .title: "Title"
+        case .author: "First Author"
+        case .key: "Key"
+        }
+    }
+}
+
+/// What an entry is sorted by, in an order: whether it lacks it, its year, or its text, folded
+struct SortKey {
+    let missing: Bool
+    let year: Int
+    let text: String
+    let key: String
+
+    init(_ entry: Entry, _ order: Order) {
+        key = entry.key
+        var year: Int?
+        var text: String?
+        switch order {
+        case .year: year = entry.year.flatMap { Int($0.prefix { $0.isASCII && $0.isNumber }) }
+        case .title: text = fold(entry.title)
+        case .author: text = entry.firstFamily.map(fold)
+        case .key: break
+        }
+        switch order {
+        case .year: missing = year == nil
+        case .title, .author: missing = text?.isEmpty ?? true
+        case .key: missing = false
+        }
+        self.year = year ?? 0
+        self.text = text ?? ""
+    }
+
+    /// Without it last, then newest first, then by text in code points, then by key
+    static func < (a: SortKey, b: SortKey) -> Bool {
+        if a.missing != b.missing { return !a.missing }
+        if a.year != b.year { return a.year > b.year }
+        if a.text != b.text {
+            return a.text.unicodeScalars.lexicographicallyPrecedes(b.text.unicodeScalars) { $0.value < $1.value }
+        }
+        return byName(a.key, b.key)
+    }
+}
+
+/// Sorts entries: by year, newest first; by title or by the first author's family name, folded; or
+/// by key. Entries without what they are sorted by go last; ties go by key
+func sortEntries(_ entries: [Entry], by order: Order) -> [Entry] {
+    entries.map { (SortKey($0, order), $0) }.sorted { $0.0 < $1.0 }.map(\.1)
 }
 
 /// Every tag of the entries, by name, with how many have it
@@ -496,15 +568,7 @@ func splitAnd(_ list: String) -> [String] {
 /// braces, such as `{ATLAS Collaboration}`, as it is
 func shortName(_ name: String) -> String {
     if name.hasPrefix("{") && name.hasSuffix("}") { return plain(name) }
-    var family = name
-    var given = ""
-    if let comma = name.firstIndex(of: ",") {
-        family = name[..<comma].trimmed
-        given = name[name.index(after: comma)...].trimmed
-    } else if let space = name.lastIndex(of: " ") {
-        family = String(name[name.index(after: space)...])
-        given = String(name[..<space])
-    }
+    let (family, given) = familyGiven(name)
     // `Jean-Pierre` → `J.-P.`; `S.W.` → `S.W.`
     func initial(_ word: Substring) -> String {
         word.split(separator: "-", omittingEmptySubsequences: false).map { part in
@@ -514,6 +578,17 @@ func shortName(_ name: String) -> String {
     let initials = given.split(whereSeparator: \.isWhitespace).map(initial).joined()
     let short = plain(family)
     return initials.isEmpty ? short : "\(initials) \(short)"
+}
+
+/// A name's family and given names: `Family, Given` or `Given Family`
+func familyGiven(_ name: String) -> (family: String, given: String) {
+    if let comma = name.firstIndex(of: ",") {
+        return (name[..<comma].trimmed, name[name.index(after: comma)...].trimmed)
+    }
+    if let space = name.lastIndex(of: " ") {
+        return (String(name[name.index(after: space)...]), String(name[..<space]))
+    }
+    return (name, "")
 }
 
 /// For finding: decomposed, without combining marks, in lower case (`Gürsey` → `gursey`)
@@ -957,6 +1032,13 @@ enum Tests {
         }
         for case let c as [String] in section("months") {
             check(month(c[0]) == c[1], "month \(c)")
+        }
+        for case let c as [String: Any] in section("sort") {
+            let entries = (c["entries"] as! [String: String]).map { entry($0.key, $0.value) }
+            for order in Order.allCases {
+                let keys = sortEntries(entries, by: order).map(\.key)
+                check(keys == c[order.rawValue] as! [String], "sort by \(order): \(keys)")
+            }
         }
         folders()
         print("\(checks - failures)/\(checks) passed")

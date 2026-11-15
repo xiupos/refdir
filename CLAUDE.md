@@ -75,6 +75,9 @@ Everything that imports SwiftUI needs the iPad.
   entry. An iPhone shows one at a time, with no code of ours.
 - **Rows are made when the library is read** (`Row`), off the main thread: the title is TeX made
   plain and the PDF mark needs the folder, so neither is done while scrolling or typing.
+- **The order** (newest first, title, first author, key) is `Store.order`, kept in
+  `UserDefaults`; each `Row` has its sort keys for every order, so that changing it only sorts.
+  The rule (`SortKey`) is refdir's `sort`, with its cases.
 - **The library** is read when the folder is opened, after every change, on pull to refresh,
   and when the app becomes active (`scenePhase`), so that a synced change shows. A read overtaken
   by a newer one is dropped.
