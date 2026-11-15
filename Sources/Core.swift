@@ -275,10 +275,9 @@ struct Entry: Hashable, Identifiable {
         })
     }
 
-    /// The main file, the first by name, if it is a PDF
+    /// The first PDF of its files, by name
     func pdf() -> URL? {
-        guard let main = files().first, isPDF(main) else { return nil }
-        return dir.appendingPathComponent(main)
+        files().first(where: isPDF).map { dir.appendingPathComponent($0) }
     }
 
     /// Writes a file into the folder, named `name`, or with `-2`, `-3`, … if it is taken
@@ -479,7 +478,7 @@ func tagCounts(_ entries: [Entry]) -> [(tag: String, count: Int)] {
 }
 
 /// An entry's files among the names in its folder: not `entry.bib`, not starting with `.`, by
-/// name. The first is the main file
+/// name
 func refdirFiles(_ names: [String]) -> [String] {
     names.filter { $0 != entryFile && !$0.hasPrefix(".") }.sorted(by: byName)
 }
@@ -1021,7 +1020,7 @@ enum Tests {
         for case let c as [String: Any] in section("files") {
             let files = refdirFiles(c["names"] as! [String])
             check(files == c["files"] as! [String], "files \(c): \(files)")
-            check((files.first.map(isPDF) ?? false) == c["pdf"] as! Bool, "pdf \(c)")
+            check(files.first(where: isPDF) == c["pdf"] as? String, "pdf \(c)")
         }
         for case let c as [String: Any] in section("free_names") {
             let free = freeName(c["name"] as! String, taken: c["taken"] as! [String])

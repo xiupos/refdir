@@ -495,7 +495,7 @@
         "notes.tex",
         "Paper.pdf"
       ],
-      "pdf": true
+      "pdf": "hep-th-9711200.pdf"
     },
     {
       "names": [
@@ -506,7 +506,19 @@
         "paper-2.PDF",
         "Paper.pdf"
       ],
-      "pdf": true
+      "pdf": "paper-2.PDF"
+    },
+    {
+      "names": [
+        "entry.bib",
+        "paper.pdf",
+        "paper.epub"
+      ],
+      "files": [
+        "paper.epub",
+        "paper.pdf"
+      ],
+      "pdf": "paper.pdf"
     },
     {
       "names": [
@@ -518,14 +530,25 @@
         "A.txt",
         "b.pdf"
       ],
-      "pdf": false
+      "pdf": "b.pdf"
+    },
+    {
+      "names": [
+        "entry.bib",
+        "paper.epub",
+        ".paper.pdf.icloud"
+      ],
+      "files": [
+        "paper.epub"
+      ],
+      "pdf": null
     },
     {
       "names": [
         "entry.bib"
       ],
       "files": [],
-      "pdf": false
+      "pdf": null
     }
   ],
   "free_names": [
