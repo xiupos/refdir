@@ -10,7 +10,7 @@ examples in `tests/cases.json`.
 
 The name is Refdir; `refdir` is the command, the crate, and the folder names.
 
-**Other programs.** RefdirApp (`~/Syncthing/swift-playgrounds-project/RefdirApp.swiftpm`), the
+**Other programs.** [refdir-ios](https://github.com/xiupos/refdir-ios) (`~/Syncthing/swift-playgrounds-project/RefdirApp.swiftpm`), the
 iOS app, implements the format again in Swift from this code, with a copy of `tests/cases.json`:
 a rule changed here is changed there, and the copy replaced.
 

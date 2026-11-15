@@ -28,7 +28,7 @@ not done, 2 when the command could not run.
 
 ## The apps
 
-`refdir-gtk`, for GNOME, and [RefdirApp](https://github.com/xiupos/RefdirApp), for iPhone and
+`refdir-gtk`, for GNOME, and [refdir-ios](https://github.com/xiupos/refdir-ios), for iPhone and
 iPad: the library by tag, finding as you type, adding by identifier or pasted BibTeX, an
 entry's tags, note, and files, reading or getting its PDF, editing its BibTeX, and exporting a
 `.bib`.
