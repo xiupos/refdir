@@ -12,6 +12,7 @@ use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::{fmt, fs, io};
 
+pub mod aux;
 pub mod bibtex;
 pub mod csl;
 pub mod tags;

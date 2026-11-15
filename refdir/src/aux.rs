@@ -1,9 +1,8 @@
 //! The citation keys in a LaTeX `.aux` file: `\citation{a,b}` (BibTeX) and `\abx@aux@cite{0}{a}`
 //! (biblatex), in the files it `\@input`s too
 
-use anyhow::{Context, Result};
-use std::fs;
 use std::path::Path;
+use std::{fs, io};
 
 #[derive(Debug, Default, PartialEq)]
 pub struct Citations {
@@ -13,14 +12,16 @@ pub struct Citations {
     pub all: bool,
 }
 
-pub fn read(path: &Path) -> Result<Citations> {
+/// The keys cited in the `.aux` file at `path`. An error names the file it could not read
+pub fn read(path: &Path) -> io::Result<Citations> {
     let mut citations = Citations::default();
     read_into(path, &mut citations, 0)?;
     Ok(citations)
 }
 
-fn read_into(path: &Path, citations: &mut Citations, depth: usize) -> Result<()> {
-    let bytes = fs::read(path).with_context(|| format!("cannot read {}", path.display()))?;
+fn read_into(path: &Path, citations: &mut Citations, depth: usize) -> io::Result<()> {
+    let bytes = fs::read(path)
+        .map_err(|e| io::Error::new(e.kind(), format!("cannot read {}: {e}", path.display())))?;
     let text = String::from_utf8_lossy(&bytes);
     for (command, groups) in commands(&text) {
         match command {

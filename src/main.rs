@@ -1,4 +1,3 @@
-mod citations;
 mod schema;
 
 use anyhow::{Context, Result, bail};
@@ -502,7 +501,7 @@ fn select<'a>(library: &'a Library, aux: Option<&Path>, tags: &[String]) -> Resu
     let taken =
         |cited: &[Cited<'a>], key: &str| cited.iter().find(|(k, _)| refdir::same_id(k, key)).map(|c| c.1);
 
-    let citations = aux.map(citations::read).transpose()?;
+    let citations = aux.map(refdir::aux::read).transpose()?;
     if citations.as_ref().is_none_or(|c| c.all) {
         for entry in library.entries.iter().filter(|e| has_tags(e, tags)) {
             let Some(id) = entry.id() else {

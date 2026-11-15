@@ -11,9 +11,8 @@ refdir: a folder format for reference libraries, and its implementation. These n
 | Path | Contents |
 |---|---|
 | `schema/v1.json` | The standard |
-| `refdir/` | The `refdir` lib crate (`src/tags.rs`: tags; `src/csl.rs`: reading CSL-JSON fields, dates, first author; `src/bibtex.rs`: CSL → BibTeX). Tests in `refdir/tests/rules.rs`, one or more per rule; `csl` and `bibtex` keep their unit tests next to their private helpers |
+| `refdir/` | The `refdir` lib crate (`src/tags.rs`: tags; `src/csl.rs`: reading CSL-JSON fields, dates, first author; `src/bibtex.rs`: CSL → BibTeX; `src/aux.rs`: citation keys from a `.aux` file, which `bib` and `heplio cite` read). Tests in `refdir/tests/rules.rs`, one or more per rule; `csl` and `bibtex` keep their unit tests next to their private helpers |
 | `src/main.rs` | The `refdir` command (package `refdir-cli`) |
-| `src/citations.rs` | Citation keys from a `.aux` file |
 | `src/schema.rs` | `check`'s JSON Schema validation |
 | `tests/cli.rs` | The commands, on a library built from `v1.json`'s examples |
 | `third_party/csl-schema` | Submodule: the CSL schema that `v1.json` `$ref`s |
