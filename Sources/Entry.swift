@@ -12,7 +12,8 @@ struct EntryPage: View {
     @State private var newTag = ""
     @State private var reading: URL?
     @State private var downloading = false
-    @State private var copied = false
+    /// What was copied last: shown on its button
+    @State private var copied: String?
     @State private var editing = false
     @State private var addingFiles = false
     @State private var deleting = false
@@ -114,21 +115,46 @@ struct EntryPage: View {
             }
             Text(details)
                 .foregroundStyle(.secondary)
-            HStack {
-                mainButton
-                Button(copied ? "Copied" : "Copy BibTeX") {
-                    UIPasteboard.general.string = entry.bib.bibtex
-                    copied = true
+            // On one line where they fit, else on two
+            ViewThatFits {
+                HStack {
+                    mainButton
+                    copyButtons
+                    inspireLink
                 }
-                .buttonStyle(.bordered)
-                if let url = inspireURL(entry.bib) {
-                    Link("INSPIRE", destination: url)
-                        .buttonStyle(.bordered)
+                VStack(alignment: .leading) {
+                    HStack {
+                        mainButton
+                        inspireLink
+                    }
+                    HStack { copyButtons }
                 }
             }
             .padding(.top, 8)
         }
         .padding(.vertical)
+    }
+
+    @ViewBuilder
+    private var copyButtons: some View {
+        Button(copied == "key" ? "Copied" : "Copy Key") {
+            UIPasteboard.general.string = entry.key
+            copied = "key"
+        }
+        .buttonStyle(.bordered)
+        Button(copied == "bibtex" ? "Copied" : "Copy BibTeX") {
+            UIPasteboard.general.string = entry.bib.bibtex
+            copied = "bibtex"
+        }
+        .buttonStyle(.bordered)
+    }
+
+    @ViewBuilder
+    private var inspireLink: some View {
+        if let url = inspireURL(entry.bib) {
+            Link("INSPIRE", destination: url)
+                .buttonStyle(.bordered)
+        }
     }
 
     @ViewBuilder

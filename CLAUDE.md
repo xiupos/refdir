@@ -93,6 +93,9 @@ Everything that imports SwiftUI needs the iPad.
   `quickLookPreview` cannot allow editing), which saves markup into the file itself
   (`.updateContents`); the library is then read again. Other files open with it too. Share PDF is
   how a PDF opens in another app: iOS has no default app for PDFs.
+- **Copying** the key or the BibTeX is on the entry's page, and on a row's context menu, so that
+  a key is copied while writing without opening its entry. The page's buttons are on one line
+  where they fit, else on two (`ViewThatFits`).
 - **Deleting** removes the entry's folder after asking: iOS has no trash for the user's folders.
 - **Exporting** shares a `.bib` written when it is shared (`BibFile`, a `FileRepresentation`).
 

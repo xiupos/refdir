@@ -345,7 +345,15 @@ private struct EntryList: View {
         @Bindable var store = store
         let shown = inPlace.filter { hasWords($0.text, search) }
         List(shown, selection: $selection) { row in
-            EntryRow(row: row).tag(row.id)
+            EntryRow(row: row)
+                .tag(row.id)
+                // For writing: the key without opening the entry
+                .contextMenu {
+                    Button("Copy Key", systemImage: "doc.on.doc") { UIPasteboard.general.string = row.entry.key }
+                    Button("Copy BibTeX", systemImage: "doc.on.clipboard") {
+                        UIPasteboard.general.string = row.entry.bib.bibtex
+                    }
+                }
         }
         .overlay {
             if store.folder == nil {
