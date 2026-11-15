@@ -1,9 +1,8 @@
-# Refdir for iPhone and iPad
+# refdir-ios
 
-A library of references as a folder: one folder per entry, named by its citation key, with its
-BibTeX in `entry.bib` and its PDFs and other files beside it. The format is
-[refdir's FORMAT.md](https://github.com/xiupos/refdir/blob/main/FORMAT.md); the `refdir` command
-and the GNOME app open the same folder, synced by iCloud Drive or any other sync.
+A file-based reference library for iPhone and iPad. Each entry is a folder, named by its citation key, with its BibTeX in `entry.bib` and its PDFs and other files beside it. There is no database: any program that reads a folder can read it, iCloud Drive or any other sync can carry it, and the [refdir](https://github.com/xiupos/refdir) command and its GNOME app open the same one. The format is [refdir's FORMAT.md](https://github.com/xiupos/refdir/blob/main/FORMAT.md).
+
+## Usage
 
 - Add papers from INSPIRE-HEP by their arXiv number, DOI, texkey, or link (doi.org for a DOI
   INSPIRE does not have), and anything else by pasting its BibTeX
@@ -12,4 +11,14 @@ and the GNOME app open the same folder, synced by iCloud Drive or any other sync
 - Find entries as you type
 - Copy an entry's BibTeX, edit it, or share a tag's entries as a `.bib`
 
-Built with Swift Playgrounds. MIT licence.
+## Building
+
+Open `RefdirApp.swiftpm` in Swift Playgrounds on an iPad (iPadOS 26 or later) and run it. It has no dependencies.
+
+## See also
+
+- [refdir](https://github.com/xiupos/refdir): the format, the `refdir` command, and the GNOME app
+
+## License
+
+[MIT](LICENSE)
