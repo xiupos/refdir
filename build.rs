@@ -1,5 +1,5 @@
-//! For the app: compiles the settings schema next to the build, so that the app finds it when it
-//! is not installed (`cargo run`). Installed, it uses the schema Meson installs
+//! For the app: compiles the settings schema next to the build, where the app finds it first, as it
+//! has the keys of this build. Without it, the app uses the schema Meson installs
 
 fn main() {
     let out = std::env::var("OUT_DIR").unwrap();

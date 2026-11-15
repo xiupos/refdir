@@ -178,6 +178,14 @@ impl Entry {
         split_and(&list).into_iter().filter(|n| *n != "others").map(short_name).collect()
     }
 
+    /// The first author's (or editor's) family name, as plain text; a name in braces whole
+    pub fn first_family(&self) -> Option<String> {
+        let list = self.bib.get("author").or_else(|| self.bib.get("editor"))?;
+        let first = *split_and(&list).first()?;
+        let braced = first.starts_with('{') && first.ends_with('}');
+        Some(plain(if braced { first } else { family_given(first).0 })).filter(|f| !f.is_empty())
+    }
+
     /// The first author's short name, and ` et al.` if there are more
     pub fn byline(&self) -> String {
         let list = self.bib.get("author").or_else(|| self.bib.get("editor")).unwrap_or_default();
@@ -341,6 +349,53 @@ fn folder_names(dir: &Path) -> io::Result<Vec<String>> {
     Ok(fs::read_dir(dir)?.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect())
 }
 
+/// How entries are listed
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Order {
+    /// Newest first
+    Year,
+    Title,
+    /// By the first author's family name
+    Author,
+    Key,
+}
+
+impl Order {
+    pub const ALL: [(Order, &str); 4] =
+        [(Order::Year, "year"), (Order::Title, "title"), (Order::Author, "author"), (Order::Key, "key")];
+
+    /// An order by its name; the key's for any other
+    pub fn named(name: &str) -> Order {
+        Order::ALL.iter().find(|(_, n)| *n == name).map_or(Order::Key, |(o, _)| *o)
+    }
+}
+
+/// Sorts entries: by year, newest first; by title or by the first author's family name, folded; or
+/// by key. Entries without what they are sorted by go last; ties go by key
+pub fn sort(entries: &mut [Entry], order: Order) {
+    entries.sort_by_cached_key(|e| {
+        let year = || e.year()?.split(|c: char| !c.is_ascii_digit()).next()?.parse::<i64>().ok();
+        let (year, text) = match order {
+            Order::Year => (year(), None),
+            Order::Title => (None, Some(fold(&e.title()))),
+            Order::Author => (None, e.first_family().map(|f| fold(&f))),
+            Order::Key => (None, None),
+        };
+        let missing = match order {
+            Order::Year => year.is_none(),
+            Order::Title | Order::Author => text.as_ref().is_none_or(|t| t.is_empty()),
+            Order::Key => false,
+        };
+        (
+            missing,
+            -year.unwrap_or(0),
+            text.unwrap_or_default(),
+            e.key().to_ascii_lowercase(),
+            e.key().to_owned(),
+        )
+    });
+}
+
 /// Names in order: ASCII letters in lower case, then by code point
 fn by_name(a: &str, b: &str) -> Ordering {
     a.to_ascii_lowercase().cmp(&b.to_ascii_lowercase()).then_with(|| a.cmp(b))
@@ -371,10 +426,7 @@ fn short_name(name: &str) -> String {
     if name.starts_with('{') && name.ends_with('}') {
         return plain(name);
     }
-    let (family, given) = match name.split_once(',') {
-        Some((family, given)) => (family.trim(), given.trim()),
-        None => name.rsplit_once(' ').map_or((name, ""), |(given, family)| (family, given)),
-    };
+    let (family, given) = family_given(name);
     // `Jean-Pierre` → `J.-P.`; `S.W.` → `S.W.`
     let initial = |part: &str| -> String {
         part.split('.').filter_map(|w| w.trim().chars().next()).map(|c| format!("{c}.")).collect()
@@ -383,6 +435,14 @@ fn short_name(name: &str) -> String {
     let initials: String = given.split_whitespace().map(initial).collect();
     let family = plain(family);
     if initials.is_empty() { family } else { format!("{initials} {family}") }
+}
+
+/// A name's family and given names: `Family, Given` or `Given Family`
+fn family_given(name: &str) -> (&str, &str) {
+    match name.split_once(',') {
+        Some((family, given)) => (family.trim(), given.trim()),
+        None => name.rsplit_once(' ').map_or((name, ""), |(given, family)| (family, given)),
+    }
 }
 
 /// TeX as plain text: `{The Large $N$ limit}` → `The Large N limit`, `$H\to\gamma\gamma$` → `H→γγ`.

@@ -152,3 +152,17 @@ fn identifiers() {
         assert_eq!(fetch::month(s(&c[0])), s(&c[1]), "{c}");
     }
 }
+
+#[test]
+fn sort() {
+    for c in cases("sort") {
+        let entries: Vec<Entry> =
+            c["entries"].as_object().unwrap().iter().map(|(k, v)| entry(k, s(v))).collect();
+        for (order, name) in refdir::Order::ALL {
+            let mut sorted = entries.clone();
+            refdir::sort(&mut sorted, order);
+            let keys: Vec<&str> = sorted.iter().map(Entry::key).collect();
+            assert_eq!(keys, strings(&c[name]), "{name}");
+        }
+    }
+}

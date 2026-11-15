@@ -83,9 +83,12 @@ Crates are renamed: `gtk` is gtk4 and `adw` is libadwaita. Check with `cargo tes
 - **The entry pane**: the main button is Read (the main file, a PDF), else Get PDF (from
   arXiv). The note is saved when it loses focus and when the app closes. Edit BibTeX takes
   exactly one entry, and keeps the folder's key.
-- **Settings** are GSettings (`net.xiupos.Refdir`: `folder`), else `$REFDIR`. Meson installs
-  the schema; `build.rs` compiles it into the build, where `settings()` finds it when the app
-  is not installed.
+- **Settings** are GSettings (`net.xiupos.Refdir`: `folder`, else `$REFDIR`; `sort`). Meson
+  installs the schema; `build.rs` compiles it into the build. `settings()` takes the built one
+  first, while it is there: an installed schema may be older, without a key the program reads,
+  which GLib makes a crash.
+- **The order** (`refdir::sort`) is the setting's own action (`settings.create_action("sort")`,
+  as `win.sort`), shown as the choices of the sort menu; a change rebuilds the list.
 - **Pango markup.** `adw::ActionRow` titles are markup by default; rows with text from entries
   set `use_markup: false`, since titles contain `<` and `&`.
 - **Toasts** have high priority, so that a new one replaces the one shown.

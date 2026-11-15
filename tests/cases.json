@@ -616,5 +616,50 @@
       "September",
       "sep"
     ]
+  ],
+  "sort": [
+    {
+      "about": "Newest first, then by title or first author ignoring case and marks, or by key; those without go last, ties by key",
+      "entries": {
+        "A": "@article{A, author = {Witten, Edward}, title = {Anti de Sitter space and holography}, year = {1998}}",
+        "b": "@article{b, author = {Maldacena, Juan Martin}, title = {{The Large $N$ limit of superconformal field theories and supergravity}}, year = {1998}}",
+        "C": "@article{C, author = {{ATLAS Collaboration}}, title = {Observation of a new particle}, year = {2012}}",
+        "d": "@misc{d, title = {{\\AA}ngstr{\\\"o}m units}}",
+        "E": "@article{E, author = {G{\\\"u}rsey, Feza}, title = {{\\'E}tude}, date = {1964-05-01}}",
+        "f": "@article{f, author = {Aad, Georges and others}, year = {2012}}"
+      },
+      "year": [
+        "C",
+        "f",
+        "A",
+        "b",
+        "E",
+        "d"
+      ],
+      "title": [
+        "d",
+        "A",
+        "E",
+        "C",
+        "b",
+        "f"
+      ],
+      "author": [
+        "f",
+        "C",
+        "E",
+        "b",
+        "A",
+        "d"
+      ],
+      "key": [
+        "A",
+        "b",
+        "C",
+        "d",
+        "E",
+        "f"
+      ]
+    }
   ]
 }

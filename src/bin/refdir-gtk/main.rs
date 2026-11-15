@@ -6,7 +6,7 @@ mod entry;
 use adw::prelude::*;
 use entry::EntryPane;
 use gtk::gio;
-use refdir::{Bib, Entry, Library, fetch};
+use refdir::{Bib, Entry, Library, Order, fetch};
 use relm4::actions::{AccelsPlus, RelmAction, RelmActionGroup};
 use relm4::factory::{DynamicIndex, FactoryComponent, FactorySender, FactoryVecDeque};
 use relm4::prelude::*;
@@ -48,11 +48,11 @@ pub fn open_file(path: &Path, in_folder: bool, parent: &impl IsA<gtk::Widget>) {
 /// The app's settings: its installed schema, or else the one `build.rs` compiles, so that the app
 /// runs from `cargo run` too
 fn settings() -> gio::Settings {
+    // The schema built with this program, which has its keys, while its build is there; else the
+    // installed one
     let installed = gio::SettingsSchemaSource::default();
-    let schema = installed.as_ref().and_then(|s| s.lookup(APP_ID, true)).or_else(|| {
-        let built = gio::SettingsSchemaSource::from_directory(env!("SCHEMA_DIR"), installed.as_ref(), false);
-        built.ok()?.lookup(APP_ID, false)
-    });
+    let built = gio::SettingsSchemaSource::from_directory(env!("SCHEMA_DIR"), installed.as_ref(), false).ok();
+    let schema = built.and_then(|s| s.lookup(APP_ID, false)).or_else(|| installed?.lookup(APP_ID, true));
     gio::Settings::new_full(&schema.expect("the app's settings schema"), None::<&gio::SettingsBackend>, None)
 }
 
@@ -217,6 +217,8 @@ enum Msg {
     ChooseFolder,
     /// The folder in the settings changed
     Folder,
+    /// The order in the settings changed
+    Sort,
     About,
     Toast(String),
     /// A row of the sidebar: all entries, then the tags
@@ -265,7 +267,8 @@ impl App {
     /// Reads the folder, and rebuilds the lists only if it changed, or if `force`
     fn reload(&mut self, widgets: &AppWidgets, sender: &ComponentSender<Self>, force: bool) {
         self.watch(sender);
-        let library = self.folder.as_deref().and_then(|f| Library::read(f).ok()).unwrap_or_default();
+        let mut library = self.folder.as_deref().and_then(|f| Library::read(f).ok()).unwrap_or_default();
+        refdir::sort(&mut library.entries, Order::named(&self.settings.string("sort")));
         let read: Vec<(Entry, Vec<PathBuf>)> = library
             .entries
             .into_iter()
@@ -374,6 +377,18 @@ fn placeholder() -> adw::ToolbarView {
     view
 }
 
+/// The orders, as choices of `win.sort`
+fn sort_menu() -> gio::Menu {
+    let menu = gio::Menu::new();
+    let labels = ["Newest First", "Title", "First Author", "Key"];
+    for ((_, name), label) in Order::ALL.iter().zip(labels) {
+        let item = gio::MenuItem::new(Some(label), None);
+        item.set_action_and_target_value(Some("win.sort"), Some(&name.to_variant()));
+        menu.append_item(&item);
+    }
+    menu
+}
+
 fn toast(overlay: &adw::ToastOverlay, text: &str) {
     overlay.add_toast(adw::Toast::builder().title(text).priority(adw::ToastPriority::High).build());
 }
@@ -446,6 +461,11 @@ impl Component for App {
                                             set_icon_name: "list-add-symbolic",
                                             set_tooltip_text: Some("Add Paper"),
                                             connect_clicked => Msg::Add,
+                                        },
+                                        pack_end = &gtk::MenuButton {
+                                            set_icon_name: "view-sort-descending-symbolic",
+                                            set_tooltip_text: Some("Sort"),
+                                            set_menu_model: Some(&sort_menu()),
                                         },
                                         pack_end = &gtk::Button {
                                             set_icon_name: "document-save-symbolic",
@@ -529,6 +549,8 @@ impl Component for App {
         let settings = settings();
         let s = sender.clone();
         settings.connect_changed(Some("folder"), move |_, _| s.input(Msg::Folder));
+        let s = sender.clone();
+        settings.connect_changed(Some("sort"), move |_, _| s.input(Msg::Sort));
         let find: Rc<RefCell<Find>> = Rc::default();
         let mut list: TypedListView<EntryItem, gtk::SingleSelection> = TypedListView::new();
         list.selection_model.set_autoselect(false);
@@ -575,7 +597,10 @@ impl Component for App {
         actions.add_action(RelmAction::<ExportAction>::new_stateless(action(|| Msg::Export)));
         actions.add_action(RelmAction::<AboutAction>::new_stateless(action(|| Msg::About)));
         actions.add_action(RelmAction::<QuitAction>::new_stateless(|_| relm4::main_application().quit()));
-        actions.register_for_widget(&root);
+        // The order is the setting's own action, a choice of its values
+        let group = actions.into_action_group();
+        group.add_action(&model.settings.create_action("sort"));
+        root.insert_action_group("win", Some(&group));
         let app = relm4::main_application();
         app.set_accelerators_for_action::<AddAction>(&["<Control>n"]);
         app.set_accelerators_for_action::<SearchAction>(&["<Control>f"]);
@@ -596,6 +621,7 @@ impl Component for App {
     ) {
         match msg {
             Msg::Reload => self.reload(widgets, &sender, false),
+            Msg::Sort => self.reload(widgets, &sender, true),
             Msg::ChooseFolder => {
                 let dialog = gtk::FileDialog::builder().title("Choose Library Folder").modal(true).build();
                 let settings = self.settings.clone();
