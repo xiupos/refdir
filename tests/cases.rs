@@ -166,3 +166,14 @@ fn sort() {
         }
     }
 }
+
+#[test]
+fn rename_tag() {
+    for c in cases("rename_tag") {
+        let renamed = refdir::renamed(&strings(&c["tags"]), s(&c["old"]), s(&c["new"]));
+        assert_eq!(renamed, c["renamed"].as_array().map(|_| strings(&c["renamed"])), "{c}");
+    }
+    for c in cases("is_tag") {
+        assert_eq!(refdir::is_tag(s(&c[0])), c[1] == true, "{c}");
+    }
+}

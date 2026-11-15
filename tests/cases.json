@@ -684,5 +684,87 @@
         "f"
       ]
     }
+  ],
+  "rename_tag": [
+    {
+      "tags": [
+        "a",
+        "b",
+        "c"
+      ],
+      "old": "b",
+      "new": "x",
+      "renamed": [
+        "a",
+        "x",
+        "c"
+      ]
+    },
+    {
+      "tags": [
+        "a",
+        "b",
+        "x"
+      ],
+      "old": "b",
+      "new": "x",
+      "renamed": [
+        "a",
+        "x"
+      ]
+    },
+    {
+      "tags": [
+        "x",
+        "b"
+      ],
+      "old": "b",
+      "new": " x ",
+      "renamed": [
+        "x"
+      ]
+    },
+    {
+      "tags": [
+        "a",
+        "b"
+      ],
+      "old": "b",
+      "new": "",
+      "renamed": [
+        "a"
+      ]
+    },
+    {
+      "tags": [
+        "a",
+        "B"
+      ],
+      "old": "b",
+      "new": "x",
+      "renamed": null
+    }
+  ],
+  "is_tag": [
+    [
+      "to-read",
+      true
+    ],
+    [
+      "topic:AdS/CFT",
+      true
+    ],
+    [
+      "",
+      false
+    ],
+    [
+      "  ",
+      false
+    ],
+    [
+      "a,b",
+      false
+    ]
   ]
 }

@@ -5,7 +5,7 @@ mod entry;
 
 use adw::prelude::*;
 use entry::EntryPane;
-use gtk::gio;
+use gtk::{gdk, gio, glib};
 use refdir::{Bib, Entry, Library, Order, fetch};
 use relm4::actions::{AccelsPlus, RelmAction, RelmActionGroup};
 use relm4::factory::{DynamicIndex, FactoryComponent, FactorySender, FactoryVecDeque};
@@ -45,6 +45,64 @@ pub fn open_file(path: &Path, in_folder: bool, parent: &impl IsA<gtk::Widget>) {
     }
 }
 
+/// A menu that opens at the pointer on a right click, or on a long press with a finger. Kept by
+/// `widget`, which drops it with its children
+pub fn context_menu(widget: &impl IsA<gtk::Widget>) -> gtk::PopoverMenu {
+    let menu = gtk::PopoverMenu::from_model(None::<&gio::MenuModel>);
+    menu.set_parent(widget);
+    menu.set_has_arrow(false);
+    menu.set_halign(gtk::Align::Start);
+    let m = menu.clone();
+    let show = move |x: f64, y: f64| {
+        m.set_pointing_to(Some(&gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
+        m.popup();
+    };
+    let click = gtk::GestureClick::builder().button(gdk::BUTTON_SECONDARY).build();
+    let s = show.clone();
+    click.connect_pressed(move |g, _, x, y| {
+        g.set_state(gtk::EventSequenceState::Claimed);
+        s(x, y);
+    });
+    let press = gtk::GestureLongPress::builder().touch_only(true).build();
+    press.connect_pressed(move |g, x, y| {
+        g.set_state(gtk::EventSequenceState::Claimed);
+        show(x, y);
+    });
+    widget.add_controller(click);
+    widget.add_controller(press);
+    menu
+}
+
+/// A menu's sections of items, each a label, an action, and the action's text
+fn menu(sections: &[&[(&str, &str, &str)]]) -> gio::Menu {
+    let menu = gio::Menu::new();
+    for items in sections.iter().filter(|s| !s.is_empty()) {
+        let section = gio::Menu::new();
+        for (label, action, target) in *items {
+            let item = gio::MenuItem::new(Some(label), None);
+            item.set_action_and_target_value(Some(action), Some(&target.to_variant()));
+            section.append_item(&item);
+        }
+        menu.append_section(None, &section);
+    }
+    menu
+}
+
+/// What a row of the list does with its entry
+#[derive(Debug, Clone, Copy)]
+enum RowAction {
+    Read,
+    ShowInFiles,
+    CopyKey,
+    CopyBibtex,
+    Trash,
+}
+
+/// `N entries`, or `1 entry`
+fn entries_count(n: usize) -> String {
+    if n == 1 { "1 entry".into() } else { format!("{n} entries") }
+}
+
 /// The app's settings: its installed schema, or else the one `build.rs` compiles, so that the app
 /// runs from `cargo run` too
 fn settings() -> gio::Settings {
@@ -80,6 +138,7 @@ impl FactoryComponent for PlaceRow {
         gtk::ListBoxRow {
             // The kind of row, for the sidebar's heading
             set_widget_name: if self.tag.is_some() { "tag" } else { "all" },
+            #[name = "inner"]
             gtk::Box {
                 set_spacing: 12,
                 gtk::Image {
@@ -103,6 +162,24 @@ impl FactoryComponent for PlaceRow {
 
     fn init_model((tag, count): Self::Init, _: &DynamicIndex, _: FactorySender<Self>) -> Self {
         PlaceRow { tag, count }
+    }
+
+    fn init_widgets(
+        &mut self,
+        _: &DynamicIndex,
+        root: Self::Root,
+        _: &gtk::ListBoxRow,
+        _: FactorySender<Self>,
+    ) -> Self::Widgets {
+        let widgets = view_output!();
+        if let Some(tag) = &self.tag {
+            let items: &[_] = &[
+                ("Rename Tag…", "win.tag-rename", tag.as_str()),
+                ("Remove Tag…", "win.tag-remove", tag.as_str()),
+            ];
+            context_menu(&widgets.inner).set_menu_model(Some(&menu(&[items])));
+        }
+        widgets
     }
 }
 
@@ -132,6 +209,7 @@ struct EntryWidgets {
     title: gtk::Label,
     subtitle: gtk::Label,
     pdf: gtk::Image,
+    menu: gtk::PopoverMenu,
 }
 
 impl RelmListItem for EntryItem {
@@ -172,13 +250,21 @@ impl RelmListItem for EntryItem {
                 },
             }
         }
-        (root, EntryWidgets { title, subtitle, pdf })
+        let menu = context_menu(&root);
+        (root, EntryWidgets { title, subtitle, pdf, menu })
     }
 
     fn bind(&mut self, w: &mut EntryWidgets, _: &mut gtk::Box) {
         w.title.set_label(&self.title);
         w.subtitle.set_label(&self.subtitle);
         w.pdf.set_visible(self.pdf);
+        let key = self.entry.key();
+        let read: &[_] = if self.pdf { &[("Read", "win.entry-read", key)] } else { &[] };
+        let open: Vec<_> = read.iter().copied().chain([("Show in Files", "win.entry-show", key)]).collect();
+        let copy: &[_] =
+            &[("Copy Key", "win.entry-copy-key", key), ("Copy BibTeX", "win.entry-copy-bibtex", key)];
+        let trash: &[_] = &[("Move to Trash", "win.entry-trash", key)];
+        w.menu.set_menu_model(Some(&menu(&[&open, copy, trash])));
     }
 }
 
@@ -209,11 +295,23 @@ struct App {
     /// The folders watched, and their monitors: a change in one reloads the library
     watched: Vec<PathBuf>,
     monitors: Vec<gio::FileMonitor>,
+    /// Whether a read is due after changes on disk
+    reading: bool,
 }
 
 #[derive(Debug)]
 enum Msg {
     Reload,
+    /// Something changed on disk: the library is read once the changes stop for a moment, not for
+    /// each, as renaming a tag writes many files
+    Changed,
+    /// From a row's menu: what to do with an entry, by its key
+    Row(RowAction, String),
+    /// From a tag's menu: ask for its new name, or whether to remove it
+    RenameTag(String),
+    RemoveTag(String),
+    /// Renames a tag in every entry that has it, or removes it if the new name is empty
+    Retag(String, String),
     ChooseFolder,
     /// The folder in the settings changed
     Folder,
@@ -333,11 +431,41 @@ impl App {
             let file = gio::File::for_path(dir);
             let monitor = file.monitor_directory(gio::FileMonitorFlags::NONE, gio::Cancellable::NONE).ok()?;
             let s = sender.clone();
-            monitor.connect_changed(move |_, _, _, _| s.input(Msg::Reload));
+            monitor.connect_changed(move |_, _, _, _| s.input(Msg::Changed));
             Some(monitor)
         };
         self.monitors = dirs.iter().filter_map(monitor).collect();
         self.watched = dirs;
+    }
+
+    fn row_action(
+        &mut self,
+        widgets: &AppWidgets,
+        sender: &ComponentSender<Self>,
+        root: &adw::ApplicationWindow,
+        action: RowAction,
+        entry: &Entry,
+    ) {
+        match action {
+            RowAction::Read => entry.pdf().iter().for_each(|pdf| open_file(pdf, false, root)),
+            RowAction::ShowInFiles => open_file(&entry.dir.join(refdir::ENTRY), true, root),
+            RowAction::CopyKey => {
+                WidgetExt::display(root).clipboard().set_text(entry.key());
+                toast(&widgets.toasts, &format!("{} copied", entry.key()));
+            }
+            RowAction::CopyBibtex => {
+                WidgetExt::display(root).clipboard().set_text(&entry.bib.to_bibtex());
+                toast(&widgets.toasts, "BibTeX copied");
+            }
+            // The trash is the undo
+            RowAction::Trash => match gio::File::for_path(&entry.dir).trash(gio::Cancellable::NONE) {
+                Ok(()) => {
+                    toast(&widgets.toasts, "Moved to the trash");
+                    self.reload(widgets, sender, false);
+                }
+                Err(e) => toast(&widgets.toasts, &format!("Could not move to the trash: {e}")),
+            },
+        }
     }
 
     /// Shows an entry in the entry pane, unless it shows it already
@@ -575,6 +703,7 @@ impl Component for App {
             shown: None,
             watched: Vec::new(),
             monitors: Vec::new(),
+            reading: false,
         };
         let (places, list) = (model.places.widget(), &model.list.view);
         let widgets = view_output!();
@@ -603,6 +732,27 @@ impl Component for App {
         // The order is the setting's own action, a choice of its values
         let group = actions.into_action_group();
         group.add_action(&model.settings.create_action("sort"));
+        // The rows' menus: their entry's key, or their tag
+        type ToMsg = fn(String) -> Msg;
+        let row_actions: [(&str, ToMsg); 7] = [
+            ("entry-read", |k| Msg::Row(RowAction::Read, k)),
+            ("entry-show", |k| Msg::Row(RowAction::ShowInFiles, k)),
+            ("entry-copy-key", |k| Msg::Row(RowAction::CopyKey, k)),
+            ("entry-copy-bibtex", |k| Msg::Row(RowAction::CopyBibtex, k)),
+            ("entry-trash", |k| Msg::Row(RowAction::Trash, k)),
+            ("tag-rename", Msg::RenameTag),
+            ("tag-remove", Msg::RemoveTag),
+        ];
+        for (name, msg) in row_actions {
+            let action = gio::SimpleAction::new(name, Some(glib::VariantTy::STRING));
+            let s = sender.clone();
+            action.connect_activate(move |_, v| {
+                if let Some(v) = v.and_then(|v| v.get::<String>()) {
+                    s.input(msg(v));
+                }
+            });
+            group.add_action(&action);
+        }
         root.insert_action_group("win", Some(&group));
         let app = relm4::main_application();
         app.set_accelerators_for_action::<AddAction>(&["<Control>n"]);
@@ -623,7 +773,82 @@ impl Component for App {
         root: &Self::Root,
     ) {
         match msg {
-            Msg::Reload => self.reload(widgets, &sender, false),
+            Msg::Reload => {
+                self.reading = false;
+                self.reload(widgets, &sender, false);
+            }
+            Msg::Changed if !self.reading => {
+                self.reading = true;
+                let s = sender.clone();
+                glib::timeout_add_local_once(std::time::Duration::from_millis(200), move || {
+                    s.input(Msg::Reload)
+                });
+            }
+            Msg::Changed => {}
+            Msg::Row(action, key) => {
+                let entry = self.entries().find(|e| e.key() == key).cloned();
+                if let Some(entry) = entry {
+                    self.row_action(widgets, &sender, root, action, &entry);
+                }
+            }
+            Msg::RenameTag(tag) => {
+                let field = gtk::Entry::builder().text(&tag).activates_default(true).build();
+                // Focused when shown: opened from a menu, which gives focus back as it closes
+                field.connect_map(|f| {
+                    f.grab_focus();
+                });
+                let dialog = adw::AlertDialog::builder()
+                    .heading("Rename Tag")
+                    .body("Every entry with it is changed. A name some have already merges the two.")
+                    .extra_child(&field)
+                    .build();
+                dialog.add_responses(&[("cancel", "_Cancel"), ("rename", "_Rename")]);
+                dialog.set_response_appearance("rename", adw::ResponseAppearance::Suggested);
+                dialog.set_default_response(Some("rename"));
+                dialog.set_close_response("cancel");
+                let (f, s) = (field.clone(), sender.clone());
+                dialog.connect_response(Some("rename"), move |_, _| {
+                    s.input(Msg::Retag(tag.clone(), f.text().into()))
+                });
+                dialog.present(Some(root));
+            }
+            Msg::RemoveTag(tag) => {
+                let n = self.entries().filter(|e| e.tags().contains(&tag)).count();
+                let dialog = adw::AlertDialog::builder()
+                    .heading(format!("Remove “{tag}”?"))
+                    .body(format!("It is removed from {}, which stay.", entries_count(n)))
+                    .build();
+                dialog.add_responses(&[("cancel", "_Cancel"), ("remove", "_Remove")]);
+                dialog.set_response_appearance("remove", adw::ResponseAppearance::Destructive);
+                dialog.set_close_response("cancel");
+                let s = sender.clone();
+                dialog.connect_response(Some("remove"), move |_, _| {
+                    s.input(Msg::Retag(tag.clone(), String::new()))
+                });
+                dialog.present(Some(root));
+            }
+            Msg::Retag(old, new) => {
+                let new = new.trim().to_owned();
+                if !new.is_empty() && !refdir::is_tag(&new) {
+                    toast(&widgets.toasts, "A tag cannot have a comma");
+                } else if new != old {
+                    let entries: Vec<Entry> = self.entries().cloned().collect();
+                    let changed = refdir::rename_tag(&entries, &old, &new);
+                    let failed = changed.iter().filter(|e| e.write().is_err()).count();
+                    // The place follows its tag
+                    let mut find = self.find.borrow_mut();
+                    if find.tag.as_deref() == Some(old.as_str()) {
+                        find.tag = Some(new).filter(|t| !t.is_empty());
+                    }
+                    drop(find);
+                    self.reload(widgets, &sender, false);
+                    let text = match failed {
+                        0 => format!("{} changed", entries_count(changed.len())),
+                        n => format!("{} could not be written", entries_count(n)),
+                    };
+                    toast(&widgets.toasts, &text);
+                }
+            }
             Msg::Sort => self.reload(widgets, &sender, true),
             Msg::ChooseFolder => {
                 let dialog = gtk::FileDialog::builder().title("Choose Library Folder").modal(true).build();

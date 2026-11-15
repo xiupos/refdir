@@ -265,6 +265,38 @@ pub fn tags<'a>(entries: impl IntoIterator<Item = &'a Entry>) -> Vec<(String, us
     tags
 }
 
+/// Whether a text can be a tag: not blank, and without a comma, which separates tags
+pub fn is_tag(tag: &str) -> bool {
+    !tag.trim().is_empty() && !tag.contains(',')
+}
+
+/// Tags with `old` renamed to `new`, or removed if `new` is blank; a tag the list then has twice
+/// is kept in its first place. `None` if it does not have `old`
+pub fn renamed(tags: &[String], old: &str, new: &str) -> Option<Vec<String>> {
+    if !tags.iter().any(|t| t == old) {
+        return None;
+    }
+    let new = new.trim();
+    let mut out: Vec<String> = Vec::new();
+    for tag in tags.iter().map(|t| if t == old { new } else { t }) {
+        if !tag.is_empty() && !out.iter().any(|t| t == tag) {
+            out.push(tag.to_owned());
+        }
+    }
+    Some(out)
+}
+
+/// The entries that have the tag `old`, with it renamed to `new`, or removed if `new` is blank
+pub fn rename_tag(entries: &[Entry], old: &str, new: &str) -> Vec<Entry> {
+    let rename = |e: &Entry| {
+        let tags = renamed(&e.tags(), old, new)?;
+        let mut e = e.clone();
+        e.set_tags(&tags);
+        Some(e)
+    };
+    entries.iter().filter_map(rename).collect()
+}
+
 /// Adds an entry to the library for `bib`, by its key, or with `a`, `b`, … after it if an entry has
 /// it. Refuses a paper the library has (`Library::same`)
 pub fn add(folder: &Path, mut bib: Bib) -> io::Result<Entry> {

@@ -82,8 +82,16 @@ Crates are renamed: `gtk` is gtk4 and `adw` is libadwaita. Check with `cargo tes
   counts, with a heading over the first tag (`set_header_func`, by the row's widget name;
   `invalidate_headers` after a rebuild).
 - **The library is watched** with `GFileMonitor`s on its folder and every folder in it, as a
-  program makes an entry's folder before its `entry.bib`. A change reads the library again;
-  the list is rebuilt only if what was read changed.
+  program makes an entry's folder before its `entry.bib`. Changes read the library again 200 ms
+  after the first (`Msg::Changed`), once for all that come meanwhile: renaming a tag, or a sync,
+  writes many files at once. The list is rebuilt only if what was read changed.
+- **Menus on rows.** A right click, or a long press with a finger, opens a row's menu
+  (`context_menu`, a `PopoverMenu` the row keeps): an entry's Read, Show in Files, Copy Key,
+  Copy BibTeX, Move to Trash; a tag's Rename and Remove. Their actions are the window's, with
+  the key or the tag as their target, so that one menu model serves every row.
+- **Renaming a tag** (`refdir::rename_tag`) writes every entry that has it; a name some have
+  already merges the two. The place follows the tag. A dialog opened from a menu focuses its
+  field when shown (`connect_map`), as the menu gives focus back while closing.
 - **The entry pane**: the main button is Read (the first PDF), else Get PDF (from
   arXiv). The note is saved when it loses focus and when the app closes. Edit BibTeX takes
   exactly one entry, and keeps the folder's key.

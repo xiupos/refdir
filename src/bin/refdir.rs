@@ -51,6 +51,13 @@ enum Command {
         #[arg(allow_hyphen_values = true)]
         changes: Vec<String>,
     },
+    /// List the tags, with how many entries have each; or rename one in every entry, or remove it
+    Tags {
+        #[arg(long, num_args = 2, value_names = ["OLD", "NEW"])]
+        rename: Option<Vec<String>>,
+        #[arg(long, value_name = "TAG", conflicts_with = "rename")]
+        remove: Option<String>,
+    },
     /// Open an entry's PDF, or else its folder
     Open { key: String },
 }
@@ -85,6 +92,14 @@ fn main() -> ExitCode {
         Command::Ls => Ok(list(library.entries.iter())),
         Command::Find { words } => Ok(list(library.entries.iter().filter(|e| e.matches(&words.join(" "))))),
         Command::Tag { key, changes } => tag(&library, &key, &changes),
+        Command::Tags { rename, remove } => match (rename.as_deref(), remove) {
+            (Some([old, new]), _) => retag(&library, old, new),
+            (_, Some(tag)) => retag(&library, &tag, ""),
+            _ => {
+                refdir::tags(&library.entries).iter().for_each(|(t, n)| out(&format!("{t}\t{n}\n")));
+                Ok(true)
+            }
+        },
         Command::Open { key } => open(&library, &key),
     };
     match result {
@@ -257,6 +272,25 @@ fn tag(library: &Library, key: &str, changes: &[String]) -> Result<bool, String>
     }
     tags.iter().for_each(|t| out(&format!("{t}\n")));
     Ok(true)
+}
+
+/// Renames a tag in every entry that has it, or removes it if `new` is empty
+fn retag(library: &Library, old: &str, new: &str) -> Result<bool, String> {
+    if !new.is_empty() && !refdir::is_tag(new) {
+        return Err(format!("{new:?} cannot be a tag"));
+    }
+    let (mut ok, mut changed) = (true, 0);
+    for entry in refdir::rename_tag(&library.entries, old, new) {
+        match entry.write() {
+            Ok(()) => changed += 1,
+            Err(e) => {
+                eprintln!("refdir: {}: {e}", entry.key());
+                ok = false;
+            }
+        }
+    }
+    eprintln!("{changed} changed");
+    Ok(ok)
 }
 
 fn open(library: &Library, key: &str) -> Result<bool, String> {

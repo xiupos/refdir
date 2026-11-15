@@ -19,6 +19,7 @@ refdir update                     # gets every entry again from INSPIRE
 refdir ls
 refdir find maldacena 1997
 refdir tag Maldacena:1997re +to-read
+refdir tags --rename to-read reading   # in every entry; --remove TAG takes it off
 refdir open Maldacena:1997re
 ```
 
