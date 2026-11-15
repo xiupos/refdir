@@ -98,10 +98,11 @@ Crates are renamed: `gtk` is gtk4 and `adw` is libadwaita. Check with `cargo tes
   the key or the tag as their target, so that one menu model serves every row. The entry pane's
   buttons for the same send them to the window too (`RowAction`), which does each in one place.
 - **Previews** are Sushi's (`org.gnome.NautilusPreviewer2`), as Files shows them: the space bar
-  on the list opens the entry with the focus and shows its PDF, or else its `entry.bib`, over
+  on the list puts the entry with the focus in the pane, without going to it in a narrow window,
+  and shows its PDF, or else its `entry.bib`, over
   the window, and hides it again. The row with the focus is found by its widget's name, the key:
   the list does not tell it, and the row selected is the one hovered (`single-click-activate`).
-  The previewer's arrow keys (`SelectionEvent`) open the entry before or after the one shown and
+  The previewer's arrow keys (`SelectionEvent`) put the entry before or after the one shown and
   preview that, the list's focus following, but only while its `ParentHandle` is the handle
   last given: Sushi sends them to every program that listens, Files too. Sushi is told the window's handle (`x11:`, or an
   exported `wayland:` one), so that it shows over it. Without Sushi, the file opens in its app.

@@ -85,7 +85,7 @@ fn menu(sections: &[&[(&str, &str, &str)]]) -> gio::Menu {
 #[derive(Debug, Clone, Copy)]
 pub enum RowAction {
     Read,
-    /// Opens it, and shows its PDF, or else its BibTeX, in the previewer, or hides that
+    /// Puts it in the pane, and shows its PDF, or else its BibTeX, in the previewer, or hides that
     Preview,
     ShowInFiles,
     CopyKey,
@@ -455,7 +455,7 @@ impl App {
         match action {
             RowAction::Read => entry.pdf().iter().for_each(|pdf| open_file(pdf, false, root)),
             RowAction::Preview => {
-                self.open(widgets, &entry.dir, sender);
+                self.put(widgets, &entry.dir, sender);
                 self.preview(root, entry, true);
             }
             RowAction::ShowInFiles => open_file(&entry.dir.join(refdir::ENTRY), true, root),
@@ -486,7 +486,14 @@ impl App {
     }
 
     /// Shows an entry in the entry pane, unless it shows it already
+    /// Shows the entry in the pane, and goes to it where the pane goes over the list
     fn open(&mut self, widgets: &AppWidgets, dir: &Path, sender: &ComponentSender<Self>) {
+        self.put(widgets, dir, sender);
+        widgets.inner.set_show_content(true);
+    }
+
+    /// Shows the entry in the pane, and selects it, staying where the window is: for previews
+    fn put(&mut self, widgets: &AppWidgets, dir: &Path, sender: &ComponentSender<Self>) {
         let Some(entry) = self.entries().find(|e| e.dir == dir).cloned() else { return };
         if self.shown.as_ref().is_none_or(|(_, shown)| shown != dir) {
             let pane =
@@ -501,7 +508,6 @@ impl App {
             self.shown = Some((pane, dir.to_owned()));
         }
         self.list.selection_model.set_selected(self.shown_at(dir));
-        widgets.inner.set_show_content(true);
     }
 
     fn preview(&self, root: &adw::ApplicationWindow, entry: &Entry, toggle: bool) {
@@ -989,7 +995,7 @@ impl Component for App {
                 let to = at.checked_add_signed(step).filter(|_| at != gtk::INVALID_LIST_POSITION);
                 let found = to.and_then(|p| Some((p, self.list.get_visible(p)?.borrow().entry.clone())));
                 if let Some((to, entry)) = found {
-                    self.open(widgets, &entry.dir, &sender);
+                    self.put(widgets, &entry.dir, &sender);
                     // The list's focus follows, for its arrow keys after the previewer closes
                     self.list.view.scroll_to(to, gtk::ListScrollFlags::FOCUS, None);
                     self.preview(root, &entry, false);
