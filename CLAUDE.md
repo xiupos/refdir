@@ -24,7 +24,9 @@ does it), no cache of responses, no TeX typeset in a web view.
   system's HTTPS, which is exempt. Playgrounds may drop the line of `Package.swift` that merges
   it: check it before uploading a build.
 - Fixed: the name Refdir, bundle ID `net.xiupos.refdir`, the team ID, the AppIcon (refdir's icon
-  on white, as iOS icons are opaque), the blue accent colour, iOS 26, Swift 5 language mode. UI
+  on white, as iOS icons are opaque; for a dark home screen, on none, with its blues a step
+  lighter; for a tinted one, in grey on none, as iOS tints it), made from refdir's SVG with
+  `rsvg-convert` and ImageMagick, the blue accent colour, iOS 26, Swift 5 language mode. UI
   text is in English.
 - Syncthing may leave `*.sync-conflict-*` copies of files. In `Sources/` they cause "invalid
   redeclaration" errors: delete them first.
@@ -113,5 +115,7 @@ Written on Linux and not yet built on the iPad:
 - Everything in the UI: choosing the folder, adding, Get PDF, Read and markup, tags, the note,
   editing BibTeX, exporting, deleting, the layouts on iPhone and iPad
 - Synced changes showing when the app becomes active
+- That Playgrounds builds the dark and tinted icons (`appearances` in the AppIcon's
+  `Contents.json`): if not, the light one shows in every mode
 - Pasting BibTeX of several lines into the add alert's field: if the field cuts it at the first
   line, adding needs a sheet with a `TextEditor`
