@@ -524,7 +524,7 @@ fn create(
         }
         item.insert("id".into(), json!(id));
         let item = refdir::prune(Value::Object(item)).unwrap_or_default();
-        let mut data = json!({ "v": 1, "added": now() });
+        let mut data = json!({ "v": 1, "added": refdir::now() });
         match source {
             Some(name) => data["sources"] = json!({ name: { "csl": item } }),
             None => data["csl"] = item,
@@ -552,23 +552,6 @@ fn create(
         out!("{}", dir.display());
     }
     Ok(true)
-}
-
-/// The time, in UTC, as `added` has it: `2026-11-15T10:00:00Z`
-fn now() -> String {
-    let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
-    let (days, rest) = ((secs / 86_400) as i64, secs % 86_400);
-    // Days to a civil date, after Howard Hinnant's `civil_from_days`
-    let z = days + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let day = doy - (153 * mp + 2) / 5 + 1;
-    let month = if mp < 10 { mp + 3 } else { mp - 9 };
-    let year = yoe + era * 400 + i64::from(month <= 2);
-    format!("{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}Z", rest / 3600, rest / 60 % 60, rest % 60)
 }
 
 // MARK: - bib

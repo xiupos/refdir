@@ -106,7 +106,7 @@ fn entry_type(csl: &str) -> &'static str {
 }
 
 /// Plain text → TeX
-pub fn escape(text: &str) -> String {
+fn escape(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for c in text.chars() {
         match c {

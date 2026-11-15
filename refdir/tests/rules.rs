@@ -258,31 +258,31 @@ fn names_are_ordered_ignoring_ascii_case_then_by_code_point() {
 // MARK: - Writing
 
 #[test]
-fn writing_keeps_unknown_keys_and_leaves_out_empty_fields() {
+fn writing_keeps_unknown_keys_and_their_order_and_leaves_out_empty_fields() {
     let lib = TempDir::new().unwrap();
     let dir = write_entry(lib.path(), "e", &examples()[1]);
     let before = read_entry(&dir).unwrap();
 
-    write_field(&dir, Field::Tags, json!(["status:read", ""])).unwrap();
-    write_field(&dir, Field::Note, json!("")).unwrap();
-    write_field(&dir, Field::Csl, json!({ "id": "Maldacena:1997re", "title": "", "author": [] })).unwrap();
+    remove_tag(&dir, "topic:AdS/CFT").unwrap();
+    set_note(&dir, "").unwrap();
+    edit_csl(lib.path(), &dir, "note", None).unwrap();
 
     let after = read_entry(&dir).unwrap();
     assert_eq!(after["tags"], json!(["status:read"]));
     assert!(!after.contains_key("note"));
-    assert_eq!(after["csl"], json!({ "id": "Maldacena:1997re" }));
+    // Its `csl` has nothing of its own left, only the sources' `id` and `type`: it goes
+    assert!(!after.contains_key("csl"));
     assert_eq!(after["sources"], before["sources"]);
     assert_eq!(after["added"], before["added"]);
-    // The keys keep their order
     let keys: Vec<&String> = after.keys().collect();
-    assert_eq!(keys, ["v", "csl", "sources", "tags", "added"]);
+    assert_eq!(keys, ["v", "sources", "tags", "added"]);
 }
 
 #[test]
 fn writing_goes_through_a_dot_file_and_leaves_none() {
     let lib = TempDir::new().unwrap();
     let dir = write_entry(lib.path(), "e", &json!({ "v": 1, "other-app": { "x": 1 } }));
-    write_field(&dir, Field::Note, json!("a note")).unwrap();
+    set_note(&dir, "a note").unwrap();
     let names: Vec<_> = fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name()).collect();
     assert_eq!(names, [ENTRY]);
     assert_eq!(read_entry(&dir).unwrap()["other-app"], json!({ "x": 1 }));
@@ -293,7 +293,7 @@ fn writing_goes_through_a_dot_file_and_leaves_none() {
 fn entries_that_cannot_be_read_are_not_written() {
     let lib = TempDir::new().unwrap();
     let dir = write_entry(lib.path(), "e", &json!({ "v": 2, "note": "keep" }));
-    assert!(write_field(&dir, Field::Note, json!("x")).is_err());
+    assert!(set_note(&dir, "x").is_err());
     assert_eq!(fs::read_to_string(dir.join(ENTRY)).unwrap(), r#"{"v":2,"note":"keep"}"#);
 }
 

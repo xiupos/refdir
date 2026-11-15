@@ -454,31 +454,6 @@ pub fn id_taken(library: &Path, id: &str, own: Option<&Path>) -> io::Result<bool
     Ok(lib.find(id).iter().any(|e| Some(e.dir.as_path()) != own))
 }
 
-/// The keys a library app writes
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Field {
-    Csl,
-    Tags,
-    Note,
-}
-
-impl Field {
-    pub fn key(self) -> &'static str {
-        match self {
-            Field::Csl => "csl",
-            Field::Tags => "tags",
-            Field::Note => "note",
-        }
-    }
-}
-
-/// Reads the entry in `dir` again, sets `field` to `value` without its empty fields (or removes
-/// it, if it is empty), and writes it. The other keys stay as they are. For `tags`, use
-/// [`edit_tags`]
-pub fn write_field(dir: &Path, field: Field, value: Value) -> Result<(), Error> {
-    put(dir, read_entry(dir)?, field, value)
-}
-
 /// Reads the entry in `dir` again, edits its tags and writes them without repeats, the first of
 /// each kept. Returns the tags as written. Writes nothing if they are unchanged, if `edit` fails,
 /// or if `tags` is not an array of strings ([`Error::Tags`]), which [`Entry::tags`] reads anyway
@@ -492,15 +467,16 @@ pub fn edit_tags(
     edit(&mut new)?;
     tags::dedup(&mut new);
     if new != old {
-        put(dir, data, Field::Tags, new.clone().into())?;
+        put(dir, data, "tags", new.clone().into())?;
     }
     Ok(new)
 }
 
-fn put(dir: &Path, mut data: Map<String, Value>, field: Field, value: Value) -> Result<(), Error> {
+/// Sets `key` to `value` without its empty fields, or removes it if it is empty, and writes the entry
+fn put(dir: &Path, mut data: Map<String, Value>, key: &str, value: Value) -> Result<(), Error> {
     match prune(value) {
-        Some(value) => data.insert(field.key().to_owned(), value),
-        None => data.shift_remove(field.key()),
+        Some(value) => data.insert(key.to_owned(), value),
+        None => data.shift_remove(key),
     };
     Ok(write_atomic(&dir.join(ENTRY), &Value::Object(data))?)
 }
@@ -526,7 +502,7 @@ pub fn set_note(dir: &Path, text: &str) -> Result<(), Error> {
     match data.get("note") {
         Some(old) if !old.is_string() => Err(Error::Note),
         old if old == new.as_ref() => Ok(()),
-        _ => put(dir, data, Field::Note, new.unwrap_or_default()),
+        _ => put(dir, data, "note", new.unwrap_or_default()),
     }
 }
 
@@ -574,7 +550,7 @@ pub fn edit_csl(library: &Path, dir: &Path, key: &str, value: Option<Value>) -> 
     if csl == before {
         return Ok(());
     }
-    put(dir, data, Field::Csl, Value::Object(csl))
+    put(dir, data, "csl", Value::Object(csl))
 }
 
 /// Creates an entry in `library` with `data` as its `entry.json`, in a folder named by its key `id`
@@ -617,6 +593,23 @@ pub fn add_file(
     let tmp = dir.join(format!(".{name}.{}.tmp", std::process::id()));
     copy(&tmp).and_then(|()| fs::rename(&tmp, &path)).inspect_err(|_| drop(fs::remove_file(&tmp)))?;
     Ok(path)
+}
+
+/// The time, in UTC, as `added` and `fetched` have it: `2026-11-15T10:00:00Z`
+pub fn now() -> String {
+    let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+    let (days, rest) = ((secs / 86_400) as i64, secs % 86_400);
+    // Days to a civil date, after Howard Hinnant's `civil_from_days`
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    format!("{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}Z", rest / 3600, rest / 60 % 60, rest % 60)
 }
 
 /// `value` without its empty fields, recursively: `null`, `""`, `[]` and `{}`. `None` if it is
