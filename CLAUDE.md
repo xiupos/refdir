@@ -62,12 +62,12 @@ Everything that imports SwiftUI needs the iPad.
   parser: values as written (text in braces or quotes, numbers, macros by name, `#`), field names
   as written, the type in lower case; `@string`, `@comment`, `@preamble` skipped; what is outside
   an entry is a comment. The `bibtex` cases hold it to refdir's.
-- **Names that shadow.** A method hides a global function of the same base name inside its type,
-  so the Core's functions have names of their own (`refdirFiles`, `addEntry`, `samePaper`,
-  `inspireQuery`).
-- **Plain text** is a small converter of its own (`TeX`), not techxt: commands to symbols,
-  scripts to Unicode where every character has one (else `^x`, `_(xy)`), accents to combining
-  marks, upright letters. The `plain` cases are where it and techxt agree.
+- **Names.** A method hides a global function of the same base name inside its type, so
+  `Entry.files()` calls `refdirFiles`, refdir's `files`; and `addEntry` is apart from
+  `Store.add`.
+- **Plain text** is a small converter of its own (`TeX`), as refdir's is a Rust library
+  (techxt): commands to symbols, scripts to Unicode where every character has one (else `^x`,
+  `_(xy)`), accents to combining marks, upright letters. The `plain` cases hold it to refdir's.
 - **Pure rules** (`newKey`, `refdirFiles`, `freeName`, `month`) take values, as refdir's do, so
   that the cases need no folders.
 
@@ -76,7 +76,7 @@ Everything that imports SwiftUI needs the iPad.
 - **Three columns**: a `NavigationSplitView` of the places (all, the tags), the list, and the
   entry. An iPhone shows one at a time, with no code of ours.
 - **Rows are made when the library is read** (`Row`), off the main thread: the title is TeX made
-  plain and the PDF mark needs the folder, so neither is done while scrolling or typing.
+  plain and the PDF is found in the folder, so neither is done while scrolling or typing.
 - **The order** (newest first, title, first author, key) is `Store.order`, kept in
   `UserDefaults`; each `Row` has its sort keys for every order, so that changing it only sorts.
   The rule (`SortKey`) is refdir's `sort`, with its cases.
@@ -102,14 +102,13 @@ Everything that imports SwiftUI needs the iPad.
   Key, Copy BibTeX, and Delete, so that a key is copied while writing without opening its entry;
   a tag's Rename and Remove (`Store.retag`, refdir's `rename_tag`: a name some have already
   merges the two; the place follows its tag). Copy Key and Copy BibTeX are on the entry's page
-  too. The page's buttons are on one line
-  where they fit, else on two (`ViewThatFits`).
+  too, whose buttons are on one line where they fit, else on two (`ViewThatFits`).
 - **Deleting** removes the entry's folder after asking: iOS has no trash for the user's folders.
 - **Exporting** shares a `.bib` written when it is shared (`BibFile`, a `FileRepresentation`).
 
 ## Not verified
 
-Written on Linux and not yet built on the iPad:
+What only the iPad can check:
 
 - That it builds: `appCategory: .reference`, and the SwiftUI and Quick Look code
 - Everything in the UI: choosing the folder, adding, Get PDF, Read and markup, tags, the note,

@@ -66,7 +66,7 @@ struct EntryPage: View {
                 Button("Get Again from INSPIRE", systemImage: "arrow.clockwise") {
                     Task { await store.getAgain(entry) }
                 }
-                .disabled(againQuery(entry.bib) == nil)
+                .disabled(paperQuery(entry.bib) == nil)
                 if let pdf = entry.pdf() {
                     // How the PDF opens in another app: iOS has no default app for PDFs
                     ShareLink(item: pdf) { Label("Share PDF", systemImage: "square.and.arrow.up") }
@@ -190,7 +190,7 @@ struct EntryPage: View {
     private func addTag() {
         let tag = newTag.trimmed
         newTag = ""
-        guard !tag.isEmpty, !tag.contains(",") else { return }
+        guard isTag(tag) else { return }
         store.edit(entry) { e in
             if !e.tags.contains(tag) { e.setTags(e.tags + [tag]) }
         }

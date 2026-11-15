@@ -18,20 +18,13 @@ struct RefdirApp: App {
 
 // MARK: - The store
 
-/// A tag of the library, and how many entries have it
-struct TagCount: Hashable, Identifiable {
-    let tag: String
-    let count: Int
-    var id: String { tag }
-}
-
 /// An entry's row in the list, made when the library is read: the title is TeX made plain, and
-/// whether it has a PDF is the folder's
+/// its PDF is found in its folder
 struct Row: Identifiable {
     let entry: Entry
     let title: String
     let subtitle: String
-    let hasPDF: Bool
+    let pdf: URL?
     /// What finding looks in, folded
     let text: String
     /// What it is sorted by, in each order
@@ -42,7 +35,7 @@ struct Row: Identifiable {
         self.entry = entry
         title = entry.title.isEmpty ? entry.key : entry.title
         subtitle = [entry.byline, entry.year ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")
-        hasPDF = entry.pdf() != nil
+        pdf = entry.pdf()
         text = entry.searchText
         sortKeys = Dictionary(uniqueKeysWithValues: Order.allCases.map { ($0, SortKey(entry, $0)) })
     }
@@ -55,14 +48,12 @@ struct Row: Identifiable {
 final class Store {
     /// The chosen folder, while the app has access to it
     private(set) var folder: URL?
-    /// By key
-    private(set) var entries: [Entry] = []
     /// In `order`
     private(set) var rows: [Row] = []
     /// How the list is sorted, kept for the next time
     var order: Order {
         didSet {
-            defaults.set(order.rawValue, forKey: "order")
+            UserDefaults.standard.set(order.rawValue, forKey: "order")
             rows = sorted(rows)
         }
     }
@@ -74,13 +65,12 @@ final class Store {
     /// Whether the folder picker is shown
     var choosingFolder = false
 
-    private let defaults = UserDefaults.standard
     /// Counts the reads begun: one overtaken by a newer one is dropped
     private var started = 0
 
     init() {
         order = Order(rawValue: UserDefaults.standard.string(forKey: "order") ?? "") ?? .year
-        guard let bookmark = defaults.data(forKey: "folder") else { return }
+        guard let bookmark = UserDefaults.standard.data(forKey: "folder") else { return }
         var stale = false
         if let url = try? URL(resolvingBookmarkData: bookmark, bookmarkDataIsStale: &stale) {
             open(url, remember: stale)
@@ -93,7 +83,6 @@ final class Store {
     /// Opens a folder the user chose, in place of the current one
     func choose(_ url: URL) {
         folder?.stopAccessingSecurityScopedResource()
-        entries = []
         rows = []
         tags = []
         open(url, remember: true)
@@ -105,7 +94,7 @@ final class Store {
         _ = url.startAccessingSecurityScopedResource()
         folder = url
         if remember, let bookmark = try? url.bookmarkData() {
-            defaults.set(bookmark, forKey: "folder")
+            UserDefaults.standard.set(bookmark, forKey: "folder")
         }
     }
 
@@ -124,9 +113,8 @@ final class Store {
         guard mine == started else { return }
         switch read {
         case .success(let (library, read)):
-            entries = library.entries
             rows = sorted(read)
-            tags = tagCounts(library.entries).map { TagCount(tag: $0.tag, count: $0.count) }
+            tags = tagCounts(library.entries)
             unreadable = library.unreadable.count
         case .failure:
             error = "The library folder cannot be read."
@@ -144,7 +132,7 @@ final class Store {
 
     /// The entry with a key, as last read
     func entry(_ key: String) -> Entry? {
-        entries.first { $0.key == key }
+        rows.first { $0.id == key }?.entry
     }
 
     /// Does something to the folder, says why if it fails, and reads it again
@@ -157,7 +145,8 @@ final class Store {
         refresh()
     }
 
-    /// Changes an entry as it is on disk now, not as it was last read, and writes it
+    /// Reads the entry from disk, changes it, and writes it if it changed, so that quick changes do
+    /// not undo each other
     func edit(_ entry: Entry, _ edit: (inout Entry) -> Void) {
         change("the entry") {
             var current = try Entry.read(entry.dir)
@@ -221,9 +210,9 @@ final class Store {
             error = "A tag cannot have a comma."
             return
         }
-        // Each entry as it is on disk now, as `edit` does
+        // Each entry read from disk, as `edit` does
         change("the tags") {
-            for entry in renameTag(entries.compactMap { try? Entry.read($0.dir) }, old, new) { try entry.write() }
+            for entry in renameTag(rows.compactMap { try? Entry.read($0.entry.dir) }, old, new) { try entry.write() }
         }
     }
 }
@@ -240,10 +229,8 @@ private func downloadEvicted(_ folder: URL) {
 }
 
 /// A short message for a failed change of `what`
-func message(_ error: Error, _ what: String) -> String {
-    if let error = error as? LocalizedError, error is CoreError || error is Failure {
-        return error.errorDescription ?? "Could not write \(what)."
-    }
+private func message(_ error: Error, _ what: String) -> String {
+    if error is CoreError || error is Failure { return error.localizedDescription }
     if let error = error as? CocoaError, [.fileWriteNoPermission, .fileReadNoPermission].contains(error.code) {
         return "No permission to write \(what)."
     }
@@ -320,7 +307,7 @@ private struct Places: View {
     var body: some View {
         List(selection: $place) {
             Label("All Entries", systemImage: "books.vertical")
-                .badge(store.entries.count)
+                .badge(store.rows.count)
                 .tag(Place.all)
             if !store.tags.isEmpty {
                 Section("Tags") {
@@ -406,7 +393,7 @@ private struct EntryList: View {
                 .tag(row.id)
                 // What the entry's page does most, without opening it: the key while writing
                 .contextMenu {
-                    if row.hasPDF, let pdf = row.entry.pdf() {
+                    if let pdf = row.pdf {
                         Button("Read", systemImage: "book") { reading = pdf }
                         ShareLink(item: pdf) { Label("Share PDF", systemImage: "square.and.arrow.up") }
                     }
@@ -510,7 +497,7 @@ private struct EntryRow: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            if row.hasPDF {
+            if row.pdf != nil {
                 Image(systemName: "doc.richtext")
                     .foregroundStyle(.secondary)
                     .accessibilityLabel("PDF")

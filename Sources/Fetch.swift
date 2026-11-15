@@ -63,7 +63,7 @@ enum Fetch {
 
     /// The entry's paper again from INSPIRE, by its arXiv number or DOI, with its key, tags, and note
     static func again(_ entry: Entry) async throws -> Bib {
-        guard let q = againQuery(entry.bib) else { throw Failure("It has no arXiv number or DOI.") }
+        guard let q = paperQuery(entry.bib) else { throw Failure("It has no arXiv number or DOI.") }
         return keepingOwn(try await find(q), of: entry)
     }
 
@@ -73,7 +73,7 @@ enum Fetch {
               let url = URL(string: "https://arxiv.org/pdf/\(arxiv)") else { throw Failure("It has no arXiv number.") }
         let data = try await get(url, session: long)
         guard data.starts(with: Data("%PDF-".utf8)) else { throw Failure("arXiv gave no PDF.") }
-        return try entry.addFile(arxivPDFName(arxiv), data)
+        return try entry.addFile(arxiv.replacingOccurrences(of: "/", with: "-") + ".pdf", data)
     }
 
     private static func parse(_ data: Data) throws -> [Bib] {

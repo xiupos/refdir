@@ -32,25 +32,25 @@ enum CoreError: LocalizedError {
 // MARK: - BibTeX
 
 /// A part of a field's value: text, written in braces, or a macro, such as `jun`
-enum Chunk: Hashable {
+enum Chunk: Equatable {
     case text(String)
     case macro(String)
 }
 
-struct Field: Hashable {
+struct Field: Equatable {
     var name: String
     var value: [Chunk]
 }
 
 /// One BibTeX entry, its fields in their order and their values as written
-struct Bib: Hashable {
+struct Bib: Equatable {
     var kind: String
     var key: String
     var fields: [Field]
 
     /// The entries of a BibTeX text. `@string`, `@comment`, and `@preamble` are not entries
     static func parse(_ text: String) throws -> [Bib] {
-        var reader = BibReader(Array(text))
+        var reader = BibReader(s: Array(text))
         return try reader.entries()
     }
 
@@ -100,10 +100,6 @@ func bibtex(_ bibs: [Bib]) -> String {
 private struct BibReader {
     let s: [Character]
     var i = 0
-
-    init(_ s: [Character]) {
-        self.s = s
-    }
 
     var atEnd: Bool { i >= s.count }
 
@@ -228,16 +224,16 @@ func isKey(_ key: String) -> Bool {
 }
 
 /// An entry: its folder, whose name is its key, and its BibTeX
-struct Entry: Hashable, Identifiable {
+struct Entry: Equatable {
     var dir: URL
     var bib: Bib
 
-    var id: String { key }
     var key: String { bib.key }
 
     /// Reads the entry in `dir`. Its key is the folder's name, whatever `entry.bib` has
     static func read(_ dir: URL) throws -> Entry {
-        let text = String(decoding: try Data(contentsOf: dir.appendingPathComponent(entryFile)), as: UTF8.self)
+        let data = try Data(contentsOf: dir.appendingPathComponent(entryFile))
+        guard let text = String(data: data, encoding: .utf8) else { throw CoreError.notBibTeX("not UTF-8") }
         var bibs = try Bib.parse(text)
         guard bibs.count == 1 else { throw CoreError.entries(bibs.count) }
         bibs[0].key = dir.lastPathComponent
@@ -326,14 +322,9 @@ struct Entry: Hashable, Identifiable {
         if let year { text.append(year) }
         return fold(text.joined(separator: "\n"))
     }
-
-    /// Whether every word of `search`, folded, is in its text
-    func matches(_ search: String) -> Bool {
-        hasWords(searchText, search)
-    }
 }
 
-/// Whether every word of `search`, folded, is in `text`, folded already
+/// Whether every word of `search`, folded, is in `text`, folded already (`Entry.searchText`)
 func hasWords(_ text: String, _ search: String) -> Bool {
     fold(search).split(whereSeparator: \.isWhitespace).allSatisfy { text.contains($0) }
 }
@@ -350,7 +341,9 @@ struct Library {
         let fm = FileManager.default
         for name in try fm.contentsOfDirectory(atPath: folder.path) where !name.hasPrefix(".") {
             let dir = folder.appendingPathComponent(name)
-            guard fm.fileExists(atPath: dir.appendingPathComponent(entryFile).path) else { continue }
+            var isDir: ObjCBool = false
+            let exists = fm.fileExists(atPath: dir.appendingPathComponent(entryFile).path, isDirectory: &isDir)
+            guard exists && !isDir.boolValue else { continue }
             do {
                 library.entries.append(try Entry.read(dir))
             } catch {
@@ -359,11 +352,6 @@ struct Library {
         }
         library.entries.sort { byName($0.key, $1.key) }
         return library
-    }
-
-    /// The entry with a key, ignoring ASCII case
-    func find(_ key: String) -> Entry? {
-        entries.first { $0.key.caseInsensitiveEquals(key) }
     }
 }
 
@@ -451,7 +439,7 @@ struct SortKey {
     static func < (a: SortKey, b: SortKey) -> Bool {
         if a.missing != b.missing { return !a.missing }
         if a.year != b.year { return a.year > b.year }
-        if a.text != b.text {
+        if !a.text.unicodeScalars.elementsEqual(b.text.unicodeScalars) {
             return a.text.unicodeScalars.lexicographicallyPrecedes(b.text.unicodeScalars) { $0.value < $1.value }
         }
         return byName(a.key, b.key)
@@ -505,14 +493,21 @@ func renameTag(_ entries: [Entry], _ old: String, _ new: String) -> [Entry] {
     }
 }
 
+/// A tag of the library, and how many entries have it
+struct TagCount: Hashable, Identifiable {
+    let tag: String
+    var count: Int
+    var id: String { tag }
+}
+
 /// Every tag of the entries, by name, with how many have it
-func tagCounts(_ entries: [Entry]) -> [(tag: String, count: Int)] {
-    var counts: [(tag: String, count: Int)] = []
+func tagCounts(_ entries: [Entry]) -> [TagCount] {
+    var counts: [TagCount] = []
     for tag in entries.flatMap(\.tags) {
         if let i = counts.firstIndex(where: { $0.tag == tag }) {
             counts[i].count += 1
         } else {
-            counts.append((tag, 1))
+            counts.append(TagCount(tag: tag, count: 1))
         }
     }
     return counts.sorted { byName($0.tag, $1.tag) }
@@ -653,7 +648,7 @@ func inspireQuery(_ id: String) -> String {
         var rest = String(id[range.upperBound...])
         if let end = rest.firstIndex(where: { $0 == "?" || $0 == "#" }) { rest = String(rest[..<end]) }
         while rest.hasSuffix("/") { rest.removeLast() }
-        if rest.hasSuffix(".pdf") { rest.removeLast(4) }
+        while rest.hasSuffix(".pdf") { rest.removeLast(4) }
         return rest
     }
     if let recid = after("inspirehep.net/literature/") { return "recid:\(recid)" }
@@ -684,15 +679,14 @@ func normalizeMonths(_ bib: Bib) -> Bib {
     return bib
 }
 
-/// The paper on INSPIRE, by its arXiv number or DOI
-func inspireURL(_ bib: Bib) -> URL? {
-    guard let q = bib.get("eprint").map({ "arxiv:\($0)" }) ?? bib.get("doi").map({ "doi:\($0)" }) else { return nil }
-    return URL(string: "https://inspirehep.net/search?p=\(percentEncoded(q))")
+/// INSPIRE's query for the paper, by its arXiv number or DOI
+func paperQuery(_ bib: Bib) -> String? {
+    bib.get("eprint").map { "arxiv:\($0)" } ?? bib.get("doi").map { "doi:\($0)" }
 }
 
-/// The entry's paper again: its query, by its arXiv number or DOI
-func againQuery(_ bib: Bib) -> String? {
-    bib.get("eprint").map { "arxiv:\($0)" } ?? bib.get("doi").map { "doi:\($0)" }
+/// The paper on INSPIRE
+func inspireURL(_ bib: Bib) -> URL? {
+    paperQuery(bib).flatMap { URL(string: "https://inspirehep.net/search?p=\(percentEncoded($0))") }
 }
 
 /// The paper got again, with the entry's key, tags, and note
@@ -703,11 +697,6 @@ func keepingOwn(_ new: Bib, of entry: Entry) -> Bib {
         bib.set(field, entry.bib.get(field) ?? "")
     }
     return bib
-}
-
-/// The name of an arXiv paper's PDF: `hep-th/9711200` → `hep-th-9711200.pdf`
-func arxivPDFName(_ arxiv: String) -> String {
-    arxiv.replacingOccurrences(of: "/", with: "-") + ".pdf"
 }
 
 /// Percent-encodes all but the unreserved characters, `+` included, which INSPIRE reads as a space
@@ -852,9 +841,8 @@ private struct TeX {
             i += 1
             if let accent = TeX.accents[String(first)] { return accented(argument(math: math), accent) }
             switch first {
-            case ",", ";", ":", " ", "\n": return " "
+            case ",", ";", ":", " ", "\n", "\\": return " "
             case "!", "/", "-": return ""
-            case "\\": return " "
             default: return String(first)
             }
         }
@@ -906,8 +894,7 @@ private struct TeX {
     }
 
     private func accented(_ text: String, _ mark: String) -> String {
-        guard !text.isEmpty else { return "" }
-        return text.map { String($0) + mark }.joined()
+        text.map { String($0) + mark }.joined()
     }
 
     /// `x` as a superscript or subscript: in Unicode if every character has one, else after `^` or
@@ -1054,8 +1041,8 @@ enum Tests {
         for case let c as [String: Any] in section("find") {
             let text = c["bibtex"] as! String
             let e = entry(try! Bib.parse(text)[0].key, text)
-            for search in c["matches"] as! [String] { check(e.matches(search), "matches \(search)") }
-            for search in c["not"] as! [String] { check(!e.matches(search), "does not match \(search)") }
+            for search in c["matches"] as! [String] { check(hasWords(e.searchText, search), "matches \(search)") }
+            for search in c["not"] as! [String] { check(!hasWords(e.searchText, search), "does not match \(search)") }
         }
         addCases(section("add"))
         for case let c as [String: Any] in section("files") {
@@ -1158,7 +1145,7 @@ enum Tests {
         let library = try! Library.read(lib)
         check(library.entries.map(\.key) == ["a", "Mine"], "keys are folder names: \(library.entries.map(\.key))")
         check(library.unreadable.count == 1, "unreadable")
-        check(library.find("MINE")?.title == "H→γγ", "find, title")
+        check(library.entries.last?.title == "H→γγ", "title")
 
         var added = try! addEntry(lib, try! Bib.parse("@misc{mine, doi = {10.1/x}, keywords = {b, a}}")[0])
         check(added.key == "minea", "a free key: \(added.key)")
