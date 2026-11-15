@@ -35,17 +35,22 @@ pub fn query(id: &str) -> String {
 /// The one paper an identifier finds: INSPIRE's BibTeX, or else, for a DOI, doi.org's
 pub fn find(id: &str) -> Result<Bib, String> {
     let q = query(id);
-    let url = format!("{INSPIRE}?q={}&size=2&format=bibtex", encode(&q));
+    if let Some(bib) = inspire(&q, id)? {
+        return Ok(bib);
+    }
+    match q.strip_prefix("doi:").or(Some(q.as_str()).filter(|q| q.starts_with("10.") && q.contains('/'))) {
+        Some(doi) => from_doi(doi),
+        None => Err(format!("INSPIRE finds nothing for {id}")),
+    }
+}
+
+/// INSPIRE's one paper for a query, if it has one; `id` names it in errors
+fn inspire(q: &str, id: &str) -> Result<Option<Bib>, String> {
+    let url = format!("{INSPIRE}?q={}&size=2&format=bibtex", encode(q));
     let mut found = parse(&get(&url, None, 30)?)?;
     match found.len() {
-        1 => Ok(found.remove(0)),
-        0 => match q
-            .strip_prefix("doi:")
-            .or(Some(q.as_str()).filter(|q| q.starts_with("10.") && q.contains('/')))
-        {
-            Some(doi) => from_doi(doi),
-            None => Err(format!("INSPIRE finds nothing for {id}")),
-        },
+        0 => Ok(None),
+        1 => Ok(Some(found.remove(0))),
         _ => Err(format!("INSPIRE finds more than one paper for {id}")),
     }
 }
@@ -71,11 +76,25 @@ pub fn month(name: &str) -> String {
     name.chars().take(3).collect::<String>().to_lowercase()
 }
 
-/// The entry's paper again from INSPIRE, by its arXiv number or DOI, with its key, tags, and note
+/// The entry's paper again from INSPIRE, by its arXiv number or DOI, as `kept` keeps it. Only
+/// INSPIRE's: doi.org's BibTeX may lack what the entry has
 pub fn again(entry: &Entry) -> Result<Bib, String> {
     let arxiv = entry.bib.get("eprint").map(|e| format!("arxiv:{e}"));
-    let id = arxiv.or_else(|| entry.bib.get("doi").map(|d| format!("doi:{d}")));
-    let mut bib = find(&id.ok_or("It has no arXiv number or DOI")?)?;
+    let q = arxiv.or_else(|| entry.bib.get("doi").map(|d| format!("doi:{d}")));
+    let q = q.ok_or("It has no arXiv number or DOI")?;
+    kept(entry, inspire(&q, &q)?.ok_or("INSPIRE does not have it")?)
+}
+
+/// The paper got again, with the entry's key, tags, and note. Refused if it lacks the title, or
+/// every name, that the entry has
+pub fn kept(entry: &Entry, mut bib: Bib) -> Result<Bib, String> {
+    let names = |b: &Bib| b.get("author").or_else(|| b.get("editor"));
+    if entry.bib.get("title").is_some() && bib.get("title").is_none() {
+        return Err("INSPIRE's has no title: it stays as it is".into());
+    }
+    if names(&entry.bib).is_some() && names(&bib).is_none() {
+        return Err("INSPIRE's has no authors: it stays as it is".into());
+    }
     bib.key = entry.key().to_owned();
     for field in ["keywords", "comment"] {
         bib.set(field, &entry.bib.get(field).unwrap_or_default());

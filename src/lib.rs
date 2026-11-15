@@ -315,6 +315,57 @@ pub fn bibtex<'a>(entries: impl IntoIterator<Item = &'a Entry>) -> String {
     entries.into_iter().map(|e| e.bib.to_bibtex()).collect::<Vec<_>>().join("\n")
 }
 
+/// The fields `new` adds (`+doi`), changes (`~title`), and removes (`-note`), in their order
+pub fn changes(old: &Bib, new: &Bib) -> Vec<String> {
+    let value = |bib: &Bib, name: &str| {
+        bib.fields.iter().find(|(n, _)| n.eq_ignore_ascii_case(name)).map(|f| f.1.clone())
+    };
+    let mut changes: Vec<String> = new
+        .fields
+        .iter()
+        .filter_map(|(name, v)| match value(old, name) {
+            None => Some(format!("+{name}")),
+            Some(o) if o != *v => Some(format!("~{name}")),
+            Some(_) => None,
+        })
+        .collect();
+    changes.extend(old.fields.iter().filter(|(n, _)| value(new, n).is_none()).map(|(n, _)| format!("-{n}")));
+    if old.kind != new.kind {
+        changes.insert(0, format!("@{}", new.kind));
+    }
+    changes
+}
+
+/// What is wrong with the entries, each with its key: a paper twice, a key twice ignoring ASCII
+/// case, a key BibTeX cannot hold, and a title or names missing
+pub fn problems(entries: &[Entry]) -> Vec<(String, String)> {
+    let mut problems = Vec::new();
+    for (i, e) in entries.iter().enumerate() {
+        let mut problem = |p: String| problems.push((e.key().to_owned(), p));
+        if let Some(other) = same(&entries[..i], &e.bib) {
+            problem(format!("the same paper as {}", other.key()));
+        }
+        if let Some(other) = entries[..i].iter().find(|o| o.key().eq_ignore_ascii_case(e.key())) {
+            problem(format!("the same key as {}, ignoring case", other.key()));
+        }
+        if !is_key(e.key()) {
+            problem("not a key BibTeX can hold".into());
+        }
+        if e.bib.get("title").is_none() {
+            problem("no title".into());
+        }
+        if e.name_list().is_empty() {
+            problem("no author or editor".into());
+        }
+    }
+    problems
+}
+
+/// Whether a file or folder is one Syncthing kept beside another, as both were changed
+pub fn is_conflict(name: &str) -> bool {
+    name.contains(".sync-conflict-")
+}
+
 /// Writes a file through a `.` file next to it, then a rename
 fn write_atomic(path: &Path, data: &[u8]) -> io::Result<()> {
     let tmp = path.with_file_name(format!(".{}.{}.tmp", name(path), std::process::id()));

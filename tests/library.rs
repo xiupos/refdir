@@ -106,3 +106,45 @@ fn files_are_added_under_free_names_and_the_first_pdf_is_read() {
     let names: Vec<_> = fs::read_dir(&e.dir).unwrap().map(|f| f.unwrap().file_name()).collect();
     assert!(names.iter().all(|n| !n.to_string_lossy().starts_with('.')));
 }
+
+#[test]
+fn checking_finds_a_paper_twice_a_key_twice_and_what_is_missing() {
+    let entry = |key: &str, text: &str| {
+        let mut bib = bib(text);
+        bib.key = key.to_owned();
+        Entry { dir: key.into(), bib }
+    };
+    let entries = [
+        entry("Maldacena:1997re", MALDACENA),
+        entry("maldacena:1997re", "@misc{x, author = {A}, title = {T}}"),
+        entry("Mine", &MALDACENA.replace("10.4310", "10.0000")),
+        entry("book", "@book{b, editor = {E}}"),
+    ];
+    let problems = refdir::problems(&entries);
+    let problems: Vec<(&str, &str)> = problems.iter().map(|(k, p)| (k.as_str(), p.as_str())).collect();
+    assert_eq!(
+        problems,
+        [
+            ("maldacena:1997re", "the same key as Maldacena:1997re, ignoring case"),
+            ("Mine", "the same paper as Maldacena:1997re"),
+            ("book", "no title"),
+        ]
+    );
+    assert!(refdir::is_conflict("entry.sync-conflict-20251101-120000-ABCDEFG.bib"));
+    assert!(!refdir::is_conflict("entry.bib"));
+}
+
+#[test]
+fn getting_again_keeps_what_is_the_users_and_shows_what_changes() {
+    let old = bib("@article{K, author = {A}, title = {Old}, eprint = {1}, note = {n}}");
+    let new = bib("@article{K, author = {A}, title = {New}, eprint = {1}, doi = {10.1/x}, journal = {J}}");
+    assert_eq!(refdir::changes(&old, &new), ["~title", "+doi", "+journal", "-note"]);
+    assert!(refdir::changes(&old, &old).is_empty());
+    let entry =
+        Entry { dir: "Mine".into(), bib: bib("@book{Mine, editor = {E}, title = {T}, keywords = {a}}") };
+    let kept = refdir::fetch::kept(&entry, bib("@book{X, author = {A}, title = {T2}}")).unwrap();
+    assert_eq!((kept.key.as_str(), kept.get("keywords").as_deref()), ("Mine", Some("a")));
+    let no_title = refdir::fetch::kept(&entry, bib("@book{X, author = {A}}"));
+    assert_eq!(no_title.unwrap_err(), "INSPIRE's has no title: it stays as it is");
+    assert!(refdir::fetch::kept(&entry, bib("@book{X, title = {T}}")).is_err());
+}

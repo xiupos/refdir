@@ -12,7 +12,9 @@ as BibTeX: a book's from its publisher, a `.bib` from another program.
 refdir add 1207.7214 Maldacena:1997re 10.1103/PhysRevD.49.6587 --pdf
 refdir add books.bib              # its entries, as they are; - reads standard input
 refdir bib main.aux > refs.bib    # adds from INSPIRE the cited keys the library lacks
-refdir update                     # gets every entry again from INSPIRE
+refdir update                     # shows what INSPIRE has changed: +doi +journal ~title …
+refdir update --write Old:2012    # writes it, keeping the key, tags, and note
+refdir check                      # a paper twice, a title missing, Syncthing's conflicts
 refdir ls
 refdir find maldacena 1997
 refdir tag Maldacena:1997re +to-read

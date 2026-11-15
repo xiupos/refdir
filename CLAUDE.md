@@ -58,8 +58,14 @@ Crates are renamed: `gtk` is gtk4 and `adw` is libadwaita. Check with `cargo tes
   `size=2` tells one hit from many. A DOI INSPIRE does not have goes to doi.org, whose months
   (`June`) become BibTeX's macros (`jun`). `ureq`, one agent, 30 s; 5 minutes for a PDF.
   Errors are short sentences naming the host; the details go to stderr.
-- **Getting again** (`fetch::again`) asks by `eprint`, else `doi`, and keeps the key,
-  `keywords`, and `comment`: those are the user's, the rest is INSPIRE's.
+- **Getting again** (`fetch::again`) asks INSPIRE by `eprint`, else `doi`, and keeps the key,
+  `keywords`, and `comment`: those are the user's, the rest is INSPIRE's. Never doi.org, and
+  refused if INSPIRE's lacks the title or every name the entry has (`fetch::kept`): doi.org's BibTeX dropped them,
+  for books and others. `refdir update` shows the fields that change (`refdir::changes`), and
+  writes only with `--write`: getting a whole library again at once was not safe.
+- **Checking** (`refdir check`, `refdir::problems`) lists what the format forbids but a sync or a
+  hand can make: a paper twice, keys the same ignoring case, an unreadable `entry.bib`, files
+  Syncthing kept in a conflict (`.sync-conflict-` in the name), and a title or names missing.
 - **The command** pauses 350 ms before each INSPIRE request, as INSPIRE allows about 15 per 5
   seconds. `bib` adds the cited keys the library lacks as `texkey:KEY` under the key cited,
   and writes each entry under the key as cited, as BibTeX warns of another case. Exit status:

@@ -35,9 +35,15 @@ enum Command {
     /// Write BibTeX: of the entries a .aux file cites, adding from INSPIRE those the library lacks,
     /// by their keys; without one, of every entry
     Bib { aux: Option<PathBuf> },
-    /// Get entries again from INSPIRE, keeping their keys, tags, and notes: those with the keys
-    /// given, or all
-    Update { keys: Vec<String> },
+    /// Get entries again from INSPIRE, keeping their keys, tags, and notes, and show the fields
+    /// that change (+added ~changed -removed): those with the keys given, or all. Writes nothing
+    /// without --write
+    Update {
+        keys: Vec<String>,
+        /// Write the entries that change
+        #[arg(long)]
+        write: bool,
+    },
     /// List the entries: key, first author, year, title
     Ls,
     /// List the entries that have every word, ignoring case and marks
@@ -60,6 +66,9 @@ enum Command {
     },
     /// Open an entry's PDF, or else its folder
     Open { key: String },
+    /// List what is wrong in the library: a paper twice, a key twice, a title or names missing,
+    /// an entry.bib that cannot be read, and the files Syncthing kept in a conflict
+    Check,
 }
 
 /// 0: done; 1: something was not found or not done; 2: the command could not run
@@ -77,7 +86,7 @@ fn main() -> ExitCode {
             if is_bib(id) { add_file(&cli.library, id, pdf) } else { add(&cli.library, id, None, pdf) }
         }))),
         Command::Bib { aux } => bib(&cli.library, library, aux.as_deref()),
-        Command::Update { keys } => update(&library, &keys),
+        Command::Update { keys, write } => update(&library, &keys, write),
         Command::Ls => Ok(list(library.entries.iter())),
         Command::Find { words } => Ok(list(library.entries.iter().filter(|e| e.matches(&words.join(" "))))),
         Command::Tag { key, changes } => tag(&library, &key, &changes),
@@ -90,6 +99,7 @@ fn main() -> ExitCode {
             }
         },
         Command::Open { key } => open(&library, &key),
+        Command::Check => check(&cli.library, &library),
     };
     match result {
         Ok(true) => ExitCode::SUCCESS,
@@ -221,20 +231,25 @@ fn bib(folder: &Path, library: Library, aux: Option<&Path>) -> Result<bool, Stri
     Ok(ok)
 }
 
-fn update(library: &Library, keys: &[String]) -> Result<bool, String> {
+fn update(library: &Library, keys: &[String], write: bool) -> Result<bool, String> {
     let entries: Vec<&Entry> = if keys.is_empty() {
         library.entries.iter().collect()
     } else {
         keys.iter().map(|k| found(library, k)).collect::<Result<_, _>>()?
     };
-    let (mut ok, mut updated) = (true, 0);
+    let (mut ok, mut changed) = (true, 0);
     for entry in entries {
         std::thread::sleep(PAUSE);
         match fetch::again(entry) {
             Ok(bib) if bib == entry.bib => {}
             Ok(bib) => {
-                Entry { dir: entry.dir.clone(), bib }.write().map_err(|e| format!("{}: {e}", entry.key()))?;
-                updated += 1;
+                out(&format!("{}\t{}\n", entry.key(), refdir::changes(&entry.bib, &bib).join(" ")));
+                if write {
+                    Entry { dir: entry.dir.clone(), bib }
+                        .write()
+                        .map_err(|e| format!("{}: {e}", entry.key()))?;
+                }
+                changed += 1;
             }
             Err(e) => {
                 eprintln!("refdir: {}: {e}", entry.key());
@@ -242,7 +257,10 @@ fn update(library: &Library, keys: &[String]) -> Result<bool, String> {
             }
         }
     }
-    eprintln!("{updated} updated");
+    match write {
+        true => eprintln!("{changed} updated"),
+        false => eprintln!("{changed} would change; --write writes them"),
+    }
     Ok(ok)
 }
 
@@ -291,4 +309,27 @@ fn open(library: &Library, key: &str) -> Result<bool, String> {
     let opener = if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
     std::process::Command::new(opener).arg(&path).spawn().map_err(|e| format!("cannot run {opener}: {e}"))?;
     Ok(true)
+}
+
+/// Prints each problem as the key or name, a tab, and what is wrong. Says whether there is none
+fn check(folder: &Path, library: &Library) -> Result<bool, String> {
+    let mut problems = refdir::problems(&library.entries);
+    for (dir, e) in &library.unreadable {
+        problems.push((name(dir), format!("{}: {e}", refdir::ENTRY)));
+    }
+    let names = std::fs::read_dir(folder).map_err(|e| e.to_string())?.flatten().map(|e| e.file_name());
+    for n in names.map(|n| n.to_string_lossy().into_owned()).filter(|n| refdir::is_conflict(n)) {
+        problems.push((n, "kept by Syncthing in a conflict".into()));
+    }
+    for entry in &library.entries {
+        for file in entry.files().into_iter().filter(|f| refdir::is_conflict(f)) {
+            problems.push((entry.key().to_owned(), format!("{file}: kept by Syncthing in a conflict")));
+        }
+    }
+    problems.iter().for_each(|(key, problem)| out(&format!("{key}\t{problem}\n")));
+    Ok(problems.is_empty())
+}
+
+fn name(path: &Path) -> String {
+    path.file_name().unwrap_or_default().to_string_lossy().into_owned()
 }
