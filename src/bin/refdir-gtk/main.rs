@@ -2,6 +2,7 @@
 //! the places (all entries, and each tag), the place's entries, and the entry chosen
 
 mod entry;
+mod preview;
 mod search;
 
 use adw::prelude::*;
@@ -84,6 +85,8 @@ fn menu(sections: &[&[(&str, &str, &str)]]) -> gio::Menu {
 #[derive(Debug, Clone, Copy)]
 pub enum RowAction {
     Read,
+    /// Opens it, and shows its PDF, or else its BibTeX, in the previewer, or hides that
+    Preview,
     ShowInFiles,
     CopyKey,
     CopyBibtex,
@@ -244,13 +247,19 @@ impl RelmListItem for EntryItem {
         (root, EntryWidgets { title, subtitle, pdf, menu })
     }
 
-    fn bind(&mut self, w: &mut EntryWidgets, _: &mut gtk::Box) {
+    fn bind(&mut self, w: &mut EntryWidgets, root: &mut gtk::Box) {
+        // Named by its key, so that the space bar finds the row with the focus
+        root.set_widget_name(self.entry.key());
         w.title.set_label(&self.title);
         w.subtitle.set_label(&self.subtitle);
         w.pdf.set_visible(self.pdf);
         let key = self.entry.key();
         let read: &[_] = if self.pdf { &[("Read", "win.entry-read", key)] } else { &[] };
-        let open: Vec<_> = read.iter().copied().chain([("Show in Files", "win.entry-show", key)]).collect();
+        let open: Vec<_> = read
+            .iter()
+            .copied()
+            .chain([("Preview", "win.entry-preview", key), ("Show in Files", "win.entry-show", key)])
+            .collect();
         let copy: &[_] =
             &[("Copy Key", "win.entry-copy-key", key), ("Copy BibTeX", "win.entry-copy-bibtex", key)];
         let trash: &[_] = &[("Move to Trash", "win.entry-trash", key)];
@@ -287,6 +296,7 @@ struct App {
     monitors: Vec<gio::FileMonitor>,
     /// Whether a read is due after changes on disk
     reading: bool,
+    previewer: Option<preview::Previewer>,
 }
 
 #[derive(Debug)]
@@ -318,6 +328,9 @@ enum Msg {
     Filter(String),
     /// A row of the list, by its place in what is shown
     Open(u32),
+    /// Opens the entry before or after the one shown (-1, 1: the previewer's arrow keys), and
+    /// previews it
+    Step(i32),
     /// An entry, by its key, and the words to search for: from GNOME Shell's search
     ShowEntry(String),
     Search(String),
@@ -441,6 +454,10 @@ impl App {
     ) {
         match action {
             RowAction::Read => entry.pdf().iter().for_each(|pdf| open_file(pdf, false, root)),
+            RowAction::Preview => {
+                self.open(widgets, &entry.dir, sender);
+                self.preview(root, entry, true);
+            }
             RowAction::ShowInFiles => open_file(&entry.dir.join(refdir::ENTRY), true, root),
             RowAction::CopyKey => {
                 WidgetExt::display(root).clipboard().set_text(entry.key());
@@ -485,6 +502,14 @@ impl App {
         }
         self.list.selection_model.set_selected(self.shown_at(dir));
         widgets.inner.set_show_content(true);
+    }
+
+    fn preview(&self, root: &adw::ApplicationWindow, entry: &Entry, toggle: bool) {
+        let file = entry.pdf().unwrap_or(entry.dir.join(refdir::ENTRY));
+        match &self.previewer {
+            Some(previewer) => preview::show(previewer, root.upcast_ref(), &file, toggle),
+            None => open_file(&file, false, root),
+        }
     }
 
     fn show_list(&self, widgets: &AppWidgets) {
@@ -731,9 +756,28 @@ impl Component for App {
             watched: Vec::new(),
             monitors: Vec::new(),
             reading: false,
+            previewer: {
+                let s = sender.input_sender().clone();
+                preview::previewer(move |step| s.emit(Msg::Step(step)))
+            },
         };
         let (places, list) = (model.places.widget(), &model.list.view);
         let widgets = view_output!();
+        let space = gtk::EventControllerKey::new();
+        space.set_propagation_phase(gtk::PropagationPhase::Capture);
+        let s = sender.clone();
+        // The row with the focus, which the list does not tell: a hovered row is the one selected
+        space.connect_key_pressed(move |c, key, _, _| {
+            let focus = c.widget().and_then(|w| w.root()).and_then(|r| r.focus());
+            match focus.and_then(|f| f.first_child()) {
+                Some(row) if key == gdk::Key::space => {
+                    s.input(Msg::Row(RowAction::Preview, row.widget_name().into()));
+                    glib::Propagation::Stop
+                }
+                _ => glib::Propagation::Proceed,
+            }
+        });
+        model.list.view.add_controller(space);
         // The window's size, as it was last
         for (key, property) in [
             ("window-width", "default-width"),
@@ -769,8 +813,9 @@ impl Component for App {
         group.add_action(&model.settings.create_action("sort"));
         // The rows' menus: their entry's key, or their tag
         type ToMsg = fn(String) -> Msg;
-        let row_actions: [(&str, ToMsg); 7] = [
+        let row_actions: [(&str, ToMsg); 8] = [
             ("entry-read", |k| Msg::Row(RowAction::Read, k)),
+            ("entry-preview", |k| Msg::Row(RowAction::Preview, k)),
             ("entry-show", |k| Msg::Row(RowAction::ShowInFiles, k)),
             ("entry-copy-key", |k| Msg::Row(RowAction::CopyKey, k)),
             ("entry-copy-bibtex", |k| Msg::Row(RowAction::CopyBibtex, k)),
@@ -936,6 +981,18 @@ impl Component for App {
             Msg::Open(position) => {
                 if let Some(dir) = self.list.get_visible(position).map(|e| e.borrow().entry.dir.clone()) {
                     self.open(widgets, &dir, &sender);
+                }
+            }
+            Msg::Step(step) => {
+                let at =
+                    self.shown.as_ref().map_or(gtk::INVALID_LIST_POSITION, |(_, dir)| self.shown_at(dir));
+                let to = at.checked_add_signed(step).filter(|_| at != gtk::INVALID_LIST_POSITION);
+                let found = to.and_then(|p| Some((p, self.list.get_visible(p)?.borrow().entry.clone())));
+                if let Some((to, entry)) = found {
+                    self.open(widgets, &entry.dir, &sender);
+                    // The list's focus follows, for its arrow keys after the previewer closes
+                    self.list.view.scroll_to(to, gtk::ListScrollFlags::FOCUS, None);
+                    self.preview(root, &entry, false);
                 }
             }
             Msg::ShowEntry(key) => {

@@ -28,6 +28,7 @@ command without GTK.
 | `src/bin/refdir.rs` | The command |
 | `src/bin/refdir-gtk/main.rs` | The window: places (all, tags), the list, adding, the folder setting, watching the library |
 | `src/bin/refdir-gtk/entry.rs` | `EntryPane`: one entry |
+| `src/bin/refdir-gtk/preview.rs` | Previews by GNOME's previewer, Sushi |
 | `src/bin/refdir-gtk/search.rs` | GNOME Shell's search (`--search-provider`) |
 | `tests/cases.json`, `tests/cases.rs` | The format's rules as examples, shared with other programs, a section each |
 | `tests/library.rs` | The rules that need folders, on temporary folders |
@@ -92,10 +93,18 @@ Crates are renamed: `gtk` is gtk4 and `adw` is libadwaita. Check with `cargo tes
   after the first (`Msg::Changed`), once for all that come meanwhile: renaming a tag, or a sync,
   writes many files at once. The list is rebuilt only if what was read changed.
 - **Menus on rows.** A right click, or a long press with a finger, opens a row's menu
-  (`context_menu`, a `PopoverMenu` the row keeps): an entry's Read, Show in Files, Copy Key,
+  (`context_menu`, a `PopoverMenu` the row keeps): an entry's Read, Preview, Show in Files, Copy Key,
   Copy BibTeX, Move to Trash; a tag's Rename and Remove. Their actions are the window's, with
   the key or the tag as their target, so that one menu model serves every row. The entry pane's
   buttons for the same send them to the window too (`RowAction`), which does each in one place.
+- **Previews** are Sushi's (`org.gnome.NautilusPreviewer2`), as Files shows them: the space bar
+  on the list opens the entry with the focus and shows its PDF, or else its `entry.bib`, over
+  the window, and hides it again. The row with the focus is found by its widget's name, the key:
+  the list does not tell it, and the row selected is the one hovered (`single-click-activate`).
+  The previewer's arrow keys (`SelectionEvent`) open the entry before or after the one shown and
+  preview that, the list's focus following, but only while its `ParentHandle` is the handle
+  last given: Sushi sends them to every program that listens, Files too. Sushi is told the window's handle (`x11:`, or an
+  exported `wayland:` one), so that it shows over it. Without Sushi, the file opens in its app.
 - **Renaming a tag** (`refdir::rename_tag`) writes every entry that has it; a name some have
   already merges the two. The place follows the tag. A dialog opened from a menu focuses its
   field when shown (`connect_map`), as the menu gives focus back while closing.
@@ -156,6 +165,8 @@ Drive it with `xdotool`, and look with `DISPLAY=:99 import -window root /tmp/rv/
   `gdbus call --session --dest net.xiupos.Refdir.SearchProvider --object-path
   /net/xiupos/Refdir/SearchProvider --method org.gnome.Shell.SearchProvider2.ActivateResult
   KEY "['word']" "uint32 0"` (`GetInitialResultSet "['word']"`, `LaunchSearch`).
+- Keys: `xdotool key` without `--window`, to the window with the focus; with `--window`, the
+  events are synthetic, which GTK ignores.
 - Another `refdir-gtk` may be the user's own: stop only those whose environment has
   `DISPLAY=:99`.
 
