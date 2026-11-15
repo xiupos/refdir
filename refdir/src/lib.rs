@@ -194,6 +194,38 @@ impl Entry {
         self.data.get("sources")?.get("inspire")
     }
 
+    /// What finding looks in, folded ([`fold`]): the resolved `title`, `container-title`, `id`,
+    /// `DOI`, and year, each author's and editor's names (and short name: `J.M. Maldacena`), the
+    /// tags, and the note
+    pub fn search_text(&self) -> String {
+        let item = self.resolved();
+        let mut parts: Vec<String> = ["title", "container-title", "id", "DOI"]
+            .iter()
+            .filter_map(|k| csl::text_field(&item, k))
+            .collect();
+        parts.extend(csl::issued(&item).map(|(year, _)| year.to_string()));
+        let names = ["author", "editor"].iter().filter_map(|k| item.get(*k)?.as_array()).flatten();
+        for name in names {
+            let part = |k: &str| name.get(k).and_then(Value::as_str).unwrap_or_default();
+            let initials: Vec<String> = part("given")
+                .split_whitespace()
+                .filter_map(|w| w.chars().next())
+                .map(|c| format!("{c}."))
+                .collect();
+            parts.extend([part("literal"), part("given"), part("family")].map(str::to_owned));
+            parts.push(format!("{} {}", initials.concat(), part("family")));
+        }
+        parts.extend(self.tags().into_iter().map(str::to_owned));
+        parts.extend(self.note().map(str::to_owned));
+        fold(&parts.join("\n"))
+    }
+
+    /// Whether every word of `search`, folded, is in [`Entry::search_text`]. An empty search finds all
+    pub fn matches(&self, search: &str) -> bool {
+        let text = self.search_text();
+        fold(search).split_whitespace().all(|word| text.contains(word))
+    }
+
     /// The resolved `DOI`, trimmed, in lower case: DOIs ignore ASCII case
     pub fn doi(&self) -> Option<String> {
         let doi = self.field("DOI")?.as_str()?.trim();
@@ -359,6 +391,23 @@ const FOLDS: [(&str, char); 15] = [
     ("źżž", 'z'),
 ];
 
+/// The plain ASCII letter, in lower case, that a marked letter is written as: `Ü` → `u`
+fn plain(c: char) -> Option<char> {
+    let lower = c.to_lowercase().next().unwrap_or(c);
+    FOLDS.iter().find(|(marked, _)| marked.contains(lower)).map(|(_, plain)| *plain)
+}
+
+/// Text as finding compares it: in lower case, with marked letters plain (`Gürsey` → `gursey`, `ß`
+/// → `ss`). Letters the table does not have, and other scripts, stay as they are
+pub fn fold(text: &str) -> String {
+    let fold = |c: char| match plain(c) {
+        Some(p) => p.to_string(),
+        None if c == 'ß' => "ss".into(),
+        None => c.to_lowercase().collect(),
+    };
+    text.chars().map(fold).collect()
+}
+
 /// A citation key for an item that has none: its first author's family name (or literal name, its
 /// first word but `The`) in ASCII letters and digits, `:`, and its year, as INSPIRE's keys are: `Knuth:1984`.
 /// If `taken` says it is, `a`, `b`, … follow the year. Without a name, `ref`
@@ -367,15 +416,11 @@ pub fn new_id(item: &Map<String, Value>, taken: impl Fn(&str) -> bool) -> String
     let part = |key| first.and_then(|f| f.get(key)).and_then(Value::as_str);
     let literal = || part("literal")?.split_whitespace().find(|w| !w.eq_ignore_ascii_case("the"));
     let name = part("family").filter(|f| !f.is_empty()).or_else(literal).or(part("given"));
-    let ascii = |c: char| {
-        let lower = c.to_lowercase().next().unwrap_or(c);
-        let folded = FOLDS.iter().find(|(marked, _)| marked.contains(lower)).map(|(_, plain)| *plain);
-        match folded {
-            Some(plain) if c.is_uppercase() => Some(plain.to_ascii_uppercase().to_string()),
-            Some(plain) => Some(plain.to_string()),
-            None if c == 'ß' => Some("ss".into()),
-            None => c.is_ascii_alphanumeric().then(|| c.to_string()),
-        }
+    let ascii = |c: char| match plain(c) {
+        Some(p) if c.is_uppercase() => Some(p.to_ascii_uppercase().to_string()),
+        Some(p) => Some(p.to_string()),
+        None if c == 'ß' => Some("ss".into()),
+        None => c.is_ascii_alphanumeric().then(|| c.to_string()),
     };
     let base: String = name.unwrap_or_default().chars().filter_map(ascii).collect();
     let base = if base.is_empty() { "ref".to_owned() } else { base };
@@ -486,7 +531,9 @@ pub fn set_note(dir: &Path, text: &str) -> Result<(), Error> {
 }
 
 /// Reads the entry in `dir` again and sets `key` of its own `csl` to `value`, which the resolved
-/// item then shows over the sources'. `None`, or the sources' value, removes it from `csl`. An
+/// item then shows over the sources'. `None`, or the sources' value, removes it from `csl`. While
+/// `csl` has fields of its own, it has `id` and `type` too, as the standard's items do: the sources'
+/// if it has none; without, it is removed. An
 /// `id` must be a BibTeX key ([`bibtex::is_key`]) that no other entry of `library` has. A `csl`
 /// that is not an object is not written over ([`Error::Csl`]). Writes nothing if it is unchanged
 pub fn edit_csl(library: &Path, dir: &Path, key: &str, value: Option<Value>) -> Result<(), Error> {
@@ -507,13 +554,24 @@ pub fn edit_csl(library: &Path, dir: &Path, key: &str, value: Option<Value>) -> 
     }
     let mut sources = data.clone();
     sources.shift_remove("csl");
-    let theirs = resolved_field(&sources, key);
-    let old = csl.get(key).cloned();
-    match value.filter(|v| Some(v) != theirs) {
+    let theirs = |k: &str| resolved_field(&sources, k).cloned();
+    let before = csl.clone();
+    match value.filter(|v| Some(v) != theirs(key).as_ref()) {
         Some(v) => csl.insert(key.to_owned(), v),
         None => csl.shift_remove(key),
     };
-    if csl.get(key) == old.as_ref() {
+    // The standard's `csl` is a whole CSL item, with `id` and `type`: while it has fields of its own,
+    // they are copied from the sources if it has none; without, they go too
+    let own = |k: &str| csl.get(k).is_some_and(|v| Some(v) != theirs(k).as_ref());
+    let needed = own("id") || own("type") || csl.keys().any(|k| k != "id" && k != "type");
+    for k in ["id", "type"] {
+        match (needed, theirs(k)) {
+            (false, _) => drop(csl.shift_remove(k)),
+            (true, Some(v)) if !csl.contains_key(k) => drop(csl.insert(k.to_owned(), v)),
+            _ => {}
+        }
+    }
+    if csl == before {
         return Ok(());
     }
     put(dir, data, Field::Csl, Value::Object(csl))
@@ -535,7 +593,7 @@ pub fn create_entry(library: &Path, id: &str, data: &Map<String, Value>) -> Resu
     Ok(dir)
 }
 
-/// Adds a file to the readable entry in `dir`, named `name`, or with `-2`, `-3`, … before its
+/// Adds a file to the readable entry in `dir`, named `name` without leading `.`s, or with `-2`, `-3`, … before its
 /// extension if a file in the folder has that name, ignoring ASCII case. `copy` writes it to the
 /// path it is given, a `.` file that is then renamed. Returns the file's path
 pub fn add_file(
@@ -544,6 +602,9 @@ pub fn add_file(
     copy: impl FnOnce(&Path) -> io::Result<()>,
 ) -> Result<PathBuf, Error> {
     read_entry(dir)?;
+    // A name starting with `.` would be no file of the entry's
+    let name = name.trim_start_matches('.');
+    let name = if name.is_empty() { "file" } else { name };
     let taken: Vec<String> = fs::read_dir(dir)?
         .map(|e| e.map(|e| e.file_name().to_string_lossy().to_ascii_lowercase()))
         .collect::<io::Result<_>>()?;

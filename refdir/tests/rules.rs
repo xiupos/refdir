@@ -510,12 +510,13 @@ fn a_note_that_is_not_a_string_is_not_written_over() {
 #[test]
 fn an_edit_goes_in_the_own_csl_unless_it_is_the_sources_value() {
     let lib = TempDir::new().unwrap();
-    let source = json!({ "v": 1, "sources": { "s": { "csl": { "id": "A:2000a", "title": "T" } } } });
+    let source =
+        json!({ "v": 1, "sources": { "s": { "csl": { "id": "A:2000a", "type": "book", "title": "T" } } } });
     let dir = write_entry(lib.path(), "a", &source);
     edit_csl(lib.path(), &dir, "title", Some(json!("U"))).unwrap();
-    assert_eq!(read(&dir)["csl"], json!({ "title": "U" }));
+    assert_eq!(read(&dir)["csl"], json!({ "title": "U", "id": "A:2000a", "type": "book" }));
     edit_csl(lib.path(), &dir, "id", Some(json!("B:2001b"))).unwrap();
-    assert_eq!(read(&dir)["csl"], json!({ "title": "U", "id": "B:2001b" }));
+    assert_eq!(read(&dir)["csl"], json!({ "title": "U", "id": "B:2001b", "type": "book" }));
     edit_csl(lib.path(), &dir, "title", Some(json!("T"))).unwrap();
     edit_csl(lib.path(), &dir, "id", None).unwrap();
     assert_eq!(read(&dir), source);
@@ -547,6 +548,7 @@ fn an_added_file_gets_a_free_name_ignoring_case() {
     assert_eq!(add_file(&dir, "notes.tex", copy).unwrap(), dir.join("notes-2.tex"));
     assert_eq!(add_file(&dir, "notes.tex", copy).unwrap(), dir.join("notes-3.tex"));
     assert_eq!(add_file(&dir, "README", copy).unwrap(), dir.join("README"));
+    assert_eq!(add_file(&dir, ".hidden", copy).unwrap(), dir.join("hidden"));
     assert_eq!(fs::read_to_string(dir.join("notes-2.tex")).unwrap(), "x");
     let left: Vec<_> = fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name()).collect();
     assert!(left.iter().all(|n| !n.to_string_lossy().starts_with('.')));
@@ -657,4 +659,31 @@ fn dois_are_found_ignoring_case() {
     let dups = library.duplicate_dois();
     assert_eq!(dups.len(), 1);
     assert_eq!(dups[0].0, "10.1000/abc");
+}
+
+#[test]
+fn finding_needs_every_word_ignoring_case_and_marks() {
+    let lib = TempDir::new().unwrap();
+    let entry = json!({ "v": 1, "csl": { "id": "Gursey:1964", "type": "article-journal", "title": "Spin and unitary spin",
+        "author": [{ "family": "Gürsey", "given": "Feza" }, { "literal": "Radicati" }], "container-title": "Phys. Rev. Lett.",
+        "issued": { "date-parts": [[1964]] }, "DOI": "10.1103/PhysRevLett.13.173" }, "tags": ["topic:flavour"], "note": "相関関数" });
+    let dir = write_entry(lib.path(), "a", &entry);
+    let entry = Entry::read(&dir).unwrap();
+    for search in [
+        "gursey",
+        "GÜRSEY spin",
+        "F. Gürsey",
+        "radicati 1964",
+        "phys. rev.",
+        "10.1103/physrevlett",
+        "flavour",
+        "相関",
+        "",
+    ] {
+        assert!(entry.matches(search), "{search:?}");
+    }
+    for search in ["gursey 1965", "SU(6)"] {
+        assert!(!entry.matches(search), "{search:?}");
+    }
+    assert_eq!(fold("Øksendal Straße"), "oksendal strasse");
 }

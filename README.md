@@ -26,14 +26,20 @@ one of them is a duplicate, as within one library; the earlier library's entry i
 
 ```sh
 refdir ls [--tag T] [-q] [--json]     # key, first author, year, title; -q: keys; --json: JSON Lines
-refdir find <word>                    # in title, authors, key and note, ignoring case
+refdir find <word>...                 # every word, ignoring case and marks: title, names, key, tags, note, …
 refdir show <key>                     # resolved item, tags, note, folder, files, sources
 refdir open <key>                     # the main file, with the default app
 refdir tag [<key> [+TAG|-TAG]...]     # the library's tags with counts; an entry's; add, remove
-refdir bib <file.aux> | --tag T | --all [--format bibtex|csl-json]
+refdir bib <file.aux> | --key K | --tag T | --all [--format bibtex|csl-json]
+refdir note <key> [TEXT|-]            # the note; or replace it (-: standard input; "": remove)
+refdir edit <key> <field> [VALUE] [--json]   # a field of the entry's own csl; no VALUE: remove it
+refdir attach <key> <file>...         # copy files into the entry
+refdir rm <key>...                    # move entries to the trash
 refdir check                          # schema/v1.json, duplicate keys, INSPIRE records and DOIs
 refdir create [items.json] [--clean] [--key K] [--source NAME] [--file F]...   # new entries from CSL-JSON
 ```
+
+`refdir edit` writes the entry's own `csl`, which the resolved item shows over its sources' values; without a value, the field goes, and the sources' value shows again. Like `create`, it leaves nothing that `check` would reject: `refdir edit KEY author --json '[{"family": "Knuth", "given": "Donald E."}]'`.
 
 `refdir create` reads a CSL-JSON item, or an array of them as Zotero exports (a file, or standard input), and writes each as an entry's own `csl`, or as `sources.NAME` with `--source`. An item whose `id` is not a BibTeX key gets one, `Knuth:1984`, then `Knuth:1984a`, …. Nothing is written unless every entry would pass `check`, and no DOI would be in the library twice. `--clean` keeps only what the CSL schema has, for items from other programs:
 

@@ -39,13 +39,14 @@ Check with `cargo fmt`, `cargo clippy --all-targets` and `cargo test` (which run
 
 ## Editing
 
-- **`edit_csl`** writes one key of the entry's own `csl`, which the resolved item shows over the sources. A value equal to the sources' resolved value, or empty, removes the key, so that the sources show through again; an empty `csl` is removed. A key (`id`) must pass `bibtex::is_key` and be free across the library (`id_taken`). How a field is typed (one author per line, `Family, Given`) is the app's.
+- **`edit_csl`** writes one key of the entry's own `csl`, which the resolved item shows over the sources. A value equal to the sources' resolved value, or empty, removes the key, so that the sources show through again. The standard's `csl` is a whole CSL item, which requires `id` and `type` (its example repeats them beside `note`): while `csl` has fields of its own, `edit_csl` keeps `id` and `type` in it, copied from the sources if it has none, and without any it removes `csl`. A key (`id`) must pass `bibtex::is_key` and be free across the library (`id_taken`). How a field is typed (one author per line, `Family, Given`) is the app's.
 - **`set_note`**: the text as typed; a blank one removes `note`. `note` and `csl` of the wrong type are refused (`Error::Note`, `Error::Csl`), not written over.
 - **`csl::clean`** fits another program's CSL-JSON to the CSL schema, read from the same file `check` uses (`csl::SCHEMA`, so the lib needs the submodule too): Crossref's types mapped (`journal-article` → `article-journal`, …; an unknown one is `document`), fields and name or date parts the schema lacks dropped, arrays where a string is wanted cut to their first item (doi.org's `ISSN`, `ISBN`), `id` dropped. doi.org gives Crossref's items for most DOIs and DataCite's for arXiv's and Zenodo's: both needed it (checked 2026-11-15, on an article, a book, a chapter, a proceedings paper, arXiv, and Zenodo).
 - **`new_id`**: the first author's family name (or literal name's first word but `The`), folded to ASCII with a small table of marked letters (the lib has no Unicode tables), `:`, the year; then `a`, `b`, …. A name with no ASCII letters gives `ref`.
 - **DOIs** are compared in lower case (`Entry::doi`); `check` reports entries that share one, as it does keys and INSPIRE records.
 - **`create_entry`** writes a new entry in a free folder named by its key, which must be a BibTeX key free in the library. It takes the whole `entry.json`: what goes in it (`csl` or a source, `added`) is the caller's.
-- **`add_file`** copies through a `.` file, then renames, to a free name: `-2`, `-3`, … before the extension, ignoring ASCII case.
+- **`add_file`** copies through a `.` file, then renames, to a free name: `-2`, `-3`, … before the extension, ignoring ASCII case. Leading `.`s are dropped from the name: such a file would be no file of the entry's.
+- **Finding** (`Entry::matches`, `search_text`) is the lib's, so that the CLI's `find` and refdir-gtk's field find the same entries: every word of the search, folded (`fold`: lower case, marked letters plain with the same table as `new_id`, so no Unicode tables), in the resolved title, container, key, DOI, year, each name and short name (`J.M. Maldacena`), the tags, and the note. Letters the table lacks stay as they are, so a search must have them as written.
 
 ## Tags
 
@@ -64,6 +65,8 @@ The standard asks only for distinct non-empty strings. The rest is shared by hep
 - **`ls`**: tab-separated, with no column padding: CJK names would need a width crate. An entry without a key shows `[folder]`; a key can never contain brackets.
 - **`tag`**: `+TAG` / `-TAG` are applied in order and written once. `-TAG` needs `allow_hyphen_values`, so a stray `-q` there is a tag to remove.
 - **`create`** takes one item or an array (Zotero's CSL-JSON export), and writes nothing unless all of them can be written: each entry must pass `check` (the same `schema.rs`), its key and DOI must be free in all the libraries and among the items before it. An item's `id` that is not a BibTeX key (Zotero's are URLs) is replaced by `new_id`; a valid `id` that is taken is an error, since it is likely the same paper. Entries go in the first library. `added` is made by hand (`now`, days to a date), to keep the dependencies few.
+- **`note`, `edit`, `attach`** call the lib's `set_note`, `edit_csl`, and `add_file`. `edit` checks the entry after writing and puts the old file back if `check` would reject it: the lib keeps `id` and `type`, so checking a copy beforehand would not see what it writes. A key is checked free across all the libraries. `bib --key` writes each key as asked for, as a `.aux` file's are.
+- **`rm`** finds every key before it moves anything, and moves entries to the trash with the `trash` crate: the lib has no trash (its only dependency is serde_json), so each program trashes its own way (refdir-gtk with GIO).
 - **`open`** uses `open::that_detached`, so that the command returns at once. To delete files, use the `trash` crate.
 
 ## BibTeX

@@ -132,6 +132,9 @@ fn ls_and_find() {
     assert_eq!(stdout(&refdir(lib.path(), &["find", "-q", "相関関数"])), "Maldacena:1997re\n");
     assert_eq!(stdout(&refdir(lib.path(), &["find", "-q", "heinrich"])), "pyhf\n");
     assert_eq!(stdout(&refdir(lib.path(), &["find", "-q", "inspire:"])), "inspire:2990001\n");
+    // Every word; marks ignored
+    assert_eq!(stdout(&refdir(lib.path(), &["find", "-q", "maldacena", "1997"])), "Maldacena:1997re\n");
+    assert_eq!(stdout(&refdir(lib.path(), &["find", "-q", "maldacena", "2012"])), "");
 
     let out = stdout(&refdir(lib.path(), &["ls", "--json", "--tag", "status:read"]));
     let line: Value = serde_json::from_str(out.trim()).unwrap();
@@ -360,4 +363,30 @@ fn create_cleans_what_doi_org_gives() {
     assert_eq!(entry["csl"]["type"], "article-journal");
     assert_eq!(entry["csl"]["id"], "Doe:2001");
     assert!(refdir(lib.path(), &["check"]).status.success());
+}
+
+#[test]
+fn note_edit_attach_and_bib_by_key() {
+    let lib = library();
+    let key = "Maldacena:1997re";
+    assert!(refdir(lib.path(), &["note", key, "Read §3"]).status.success());
+    assert_eq!(stdout(&refdir(lib.path(), &["note", key])), "Read §3\n");
+    assert!(refdir(lib.path(), &["note", key, ""]).status.success());
+    assert_eq!(stdout(&refdir(lib.path(), &["note", key])), "");
+
+    assert!(refdir(lib.path(), &["edit", key, "title", "Large N"]).status.success());
+    let out = refdir(lib.path(), &["edit", key, "author", "--json", r#""not a list""#]);
+    assert_eq!(out.status.code(), Some(2));
+    // Taken by another entry, ignoring case
+    assert_eq!(refdir(lib.path(), &["edit", key, "id", "atlas:2012YVE"]).status.code(), Some(2));
+    assert!(refdir(lib.path(), &["check"]).status.success());
+    // Found ignoring case, and written as asked for, as a .aux file's keys are
+    let bib = stdout(&refdir(lib.path(), &["bib", "--key", "maldacena:1997RE"]));
+    assert!(bib.starts_with("@article{maldacena:1997RE,") && bib.contains("{{Large N}}"), "{bib}");
+
+    let file = lib.path().join(".in.txt");
+    fs::write(&file, "x").unwrap();
+    let out = stdout(&refdir(lib.path(), &["attach", key, file.to_str().unwrap(), file.to_str().unwrap()]));
+    let dir = lib.path().join("Maldacena-1997re");
+    assert_eq!(out, format!("{}\n{}\n", dir.join("in.txt").display(), dir.join("in-2.txt").display()));
 }
