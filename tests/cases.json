@@ -382,6 +382,38 @@
     [
       "--- and -- dashes",
       "— and – dashes"
+    ],
+    [
+      "R1,3{\\texttimes}(T2)3/(Z2{\\texttimes}Z2')",
+      "R1,3×(T2)3/(Z2×Z2’)"
+    ],
+    [
+      "{{S}}\\textasciicircum 1\\textbackslash vee {{S}}",
+      "S^1\\vee S"
+    ],
+    [
+      "Z2' and `a' and \"x\"",
+      "Z2’ and ‘a’ and \"x\""
+    ],
+    [
+      "\\textless x\\textgreater",
+      "<x>"
+    ],
+    [
+      "\\textunderscore a\\textbar b",
+      "_a|b"
+    ],
+    [
+      "\\textquotedblleft a\\textquotedblright",
+      "“a”"
+    ],
+    [
+      "\\textpm 1, \\textdegree C, \\textellipsis",
+      "±1, °C, …"
+    ],
+    [
+      "Erd\\H{o}s's",
+      "Erdős’s"
     ]
   ],
   "tags": [
