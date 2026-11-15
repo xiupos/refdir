@@ -280,7 +280,7 @@ struct PDFReader: UIViewControllerRepresentable {
 
     // Quick Look calls these on the main thread, though its protocols do not say so
     @MainActor
-    final class Coordinator: NSObject, @preconcurrency QLPreviewControllerDataSource,
+    final class Coordinator: NSObject, QLPreviewControllerDataSource,
                              @preconcurrency QLPreviewControllerDelegate {
         var parent: PDFReader
         var url: URL?

@@ -1,6 +1,7 @@
 // The app: the library's state (`Store`), the folder and its bookmark, the places, the list,
-// adding, and exporting
+// adding, exporting, and the entries in Spotlight
 
+import CoreSpotlight
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -114,10 +115,28 @@ final class Store {
         switch read {
         case .success(let (library, read)):
             rows = sorted(read)
+            index(read)
             tags = tagCounts(library.entries)
             unreadable = library.unreadable.count
         case .failure:
             error = "The library folder cannot be read."
+        }
+    }
+
+    /// Puts the entries in Spotlight, in place of those before, so that the system's search finds
+    /// them by title, names, key, and tags
+    private func index(_ rows: [Row]) {
+        Task.detached {
+            let items = rows.map { row in
+                let attributes = CSSearchableItemAttributeSet(contentType: .text)
+                attributes.title = row.title
+                attributes.contentDescription = [row.subtitle, row.id].filter { !$0.isEmpty }.joined(separator: " · ")
+                attributes.keywords = [row.id] + row.entry.names + row.entry.tags
+                return CSSearchableItem(uniqueIdentifier: row.id, domainIdentifier: "entries", attributeSet: attributes)
+            }
+            let index = CSSearchableIndex.default()
+            try? await index.deleteSearchableItems(withDomainIdentifiers: ["entries"])
+            try? await index.indexSearchableItems(items)
         }
     }
 
@@ -286,6 +305,12 @@ struct RootView: View {
             Button("OK") {}
         } message: {
             Text(store.error ?? "")
+        }
+        .onContinueUserActivity(CSSearchableItemActionType) { activity in
+            // An entry chosen in Spotlight, by its key
+            guard let key = activity.userInfo?[CSSearchableItemActivityIdentifier] as? String else { return }
+            place = .all
+            selection = key
         }
         .onChange(of: scenePhase) { _, phase in
             // A change synced while the app was away

@@ -37,7 +37,7 @@ does it), no cache of responses, no TeX typeset in a web view.
 |---|---|
 | `Sources/Core.swift` | Foundation only, and everything in the format: BibTeX (`Bib`, read and written), `Entry`, `Library`, adding, files, names, plain text, finding, identifiers. Has the tests |
 | `Sources/Fetch.swift` | The network: INSPIRE, doi.org, arXiv |
-| `Sources/App.swift` | `@main`, `Store` (the folder, its bookmark, reading it, every change to it), the places, the list, adding, exporting |
+| `Sources/App.swift` | `@main`, `Store` (the folder, its bookmark, reading it, every change to it), the places, the list, adding, exporting, Spotlight |
 | `Sources/Entry.swift` | `EntryPage`: one entry. The BibTeX editor, Quick Look |
 | `cases.json` | refdir's examples |
 
@@ -103,6 +103,11 @@ Everything that imports SwiftUI needs the iPad.
   a tag's Rename and Remove (`Store.retag`, refdir's `rename_tag`: a name some have already
   merges the two; the place follows its tag). Copy Key and Copy BibTeX are on the entry's page
   too, whose buttons are on one line where they fit, else on two (`ViewThatFits`).
+- **Spotlight** has the entries, put in again after every read (`Store.index`, one domain,
+  `entries`, emptied first, so that removed entries go): the title, the byline and year, the key,
+  and the names and tags as keywords. One chosen there opens the app on it
+  (`onContinueUserActivity`, `CSSearchableItemActivityIdentifier` being the key), in All Entries.
+  It is refdir's GNOME Shell search.
 - **Deleting** removes the entry's folder after asking: iOS has no trash for the user's folders.
 - **Exporting** shares a `.bib` written when it is shared (`BibFile`, a `FileRepresentation`).
 
@@ -114,6 +119,7 @@ What only the iPad can check:
 - Everything in the UI: choosing the folder, adding, Get PDF, Read and markup, tags, the note,
   editing BibTeX, exporting, deleting, the layouts on iPhone and iPad
 - Synced changes showing when the app becomes active
+- Spotlight: entries found, and one chosen opening on its page, on iPhone too
 - That Playgrounds builds the dark and tinted icons (`appearances` in the AppIcon's
   `Contents.json`): if not, the light one shows in every mode
 - Pasting BibTeX of several lines into the add alert's field: if the field cuts it at the first
