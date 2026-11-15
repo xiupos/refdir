@@ -1,5 +1,6 @@
 //! The citation keys in a LaTeX `.aux` file: `\citation{a,b}` (BibTeX) and `\abx@aux@cite{0}{a}`
-//! (biblatex), in the files it `\@input`s too
+//! (biblatex), in the files it `\@input`s too. `\nocite{*}` is `\citation{*}`, or biblatex's
+//! `\abx@aux@nociteall`
 
 use std::path::Path;
 use std::{fs, io};
@@ -8,7 +9,7 @@ use std::{fs, io};
 pub struct Citations {
     /// In order, each once
     pub keys: Vec<String>,
-    /// `\nocite{*}`
+    /// `\nocite{*}`: every entry
     pub all: bool,
 }
 
@@ -29,6 +30,7 @@ fn read_into(path: &Path, citations: &mut Citations, depth: usize) -> io::Result
                 groups.first().into_iter().flat_map(|g| g.split(',')).for_each(|k| citations.add(k))
             }
             "abx@aux@cite" => groups.last().into_iter().for_each(|k| citations.add(k)),
+            "abx@aux@nociteall" => citations.all = true,
             // As BibTeX does, relative to the main `.aux` file's folder; `\include`s are one deep
             "@input" if depth < 8 => {
                 let Some(name) = groups.first() else { continue };
@@ -54,11 +56,11 @@ impl Citations {
     }
 }
 
-/// `\name{a}{b}` at the start of lines → `("name", ["a", "b"])`
+/// `\name{a}{b}` at the start of lines → `("name", ["a", "b"])`; `\name` alone → `("name", [])`
 fn commands(text: &str) -> impl Iterator<Item = (&str, Vec<&str>)> {
     text.lines().filter_map(|line| {
-        let rest = line.trim_start().strip_prefix('\\')?;
-        let end = rest.find('{')?;
+        let rest = line.trim_end().trim_start().strip_prefix('\\')?;
+        let end = rest.find('{').unwrap_or(rest.len());
         let (name, mut rest) = rest.split_at(end);
         let mut groups = Vec::new();
         while let Some(inner) = rest.strip_prefix('{') {
@@ -92,5 +94,10 @@ mod tests {
             ["Maldacena:1997re", "ATLAS:2012yve", "inspire:2990001", "pyhf", "Takagi:1971"]
         );
         assert!(citations.all);
+
+        // biblatex's \nocite{*}
+        fs::write(&main, "\\relax\n\\abx@aux@refcontext{nyt/global//global/global}\n\\abx@aux@nociteall\n")
+            .unwrap();
+        assert_eq!(read(&main).unwrap(), Citations { keys: Vec::new(), all: true });
     }
 }
