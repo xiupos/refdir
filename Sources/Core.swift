@@ -790,6 +790,13 @@ private struct TeX {
             case "'" where !math && peek("''"):
                 i += 2
                 out += "”"
+            // Quotes, as TeX sets them
+            case "'" where !math:
+                i += 1
+                out += "’"
+            case "`" where !math:
+                i += 1
+                out += "‘"
             default:
                 i += 1
                 out.append(c)
@@ -851,7 +858,8 @@ private struct TeX {
             name.append(s[i])
             i += 1
         }
-        if math { skipSpaces() }
+        // TeX ends a command's name with the spaces after it
+        skipSpaces()
         if let symbol = TeX.symbols[name] { return symbol }
         if let accent = TeX.accents[name] { return accented(argument(math: math), accent) }
         switch name {
@@ -971,7 +979,10 @@ private struct TeX {
         "backslash": "∖", "S": "§", "P": "¶", "copyright": "©", "dag": "†", "ddag": "‡",
         "i": "ı", "j": "ȷ", "o": "ø", "O": "Ø", "ss": "ß", "ae": "æ", "AE": "Æ", "oe": "œ", "OE": "Œ",
         "aa": "å", "AA": "Å", "l": "ł", "L": "Ł", "textendash": "–", "textemdash": "—",
-        "textasciitilde": "~", "textdegree": "°", "textmu": "µ", "textperthousand": "‰", "LaTeX": "LaTeX",
+        "textasciitilde": "~", "textasciicircum": "^", "textbackslash": "\\", "texttimes": "×", "textpm": "±",
+        "textless": "<", "textgreater": ">", "textunderscore": "_", "textbar": "|", "textellipsis": "…",
+        "textquoteleft": "‘", "textquoteright": "’", "textquotedblleft": "“", "textquotedblright": "”",
+        "textdegree": "°", "textmu": "µ", "textperthousand": "‰", "LaTeX": "LaTeX",
         "TeX": "TeX",
         // Functions, upright
         "sin": "sin", "cos": "cos", "tan": "tan", "cot": "cot", "sec": "sec", "csc": "csc", "arcsin": "arcsin",
