@@ -87,6 +87,7 @@ fn menu(sections: &[&[(&str, &str, &str)]]) -> gio::Menu {
         for (label, action, target) in *items {
             let item = gio::MenuItem::new(Some(label), None);
             item.set_action_and_target_value(Some(action), Some(&target.to_variant()));
+            item.set_attribute_value("hidden-when", Some(&"action-disabled".to_variant()));
             section.append_item(&item);
         }
         menu.append_section(None, &section);
@@ -103,6 +104,8 @@ pub enum RowAction {
     ShowInFiles,
     CopyKey,
     CopyBibtex,
+    /// Takes the tag of the place shown from it
+    RemoveFromTag,
     Trash,
 }
 
@@ -296,7 +299,8 @@ impl RelmListItem for EntryItem {
             .collect();
         let copy: &[_] =
             &[("Copy Key", "win.entry-copy-key", key), ("Copy BibTeX", "win.entry-copy-bibtex", key)];
-        let trash: &[_] = &[("Move to Trash", "win.entry-trash", key)];
+        let trash: &[_] =
+            &[("Remove from Tag", "win.entry-untag", key), ("Move to Trash", "win.entry-trash", key)];
         w.menu.set_menu_model(Some(&menu(&[&open, copy, trash])));
     }
 }
@@ -331,6 +335,8 @@ struct App {
     /// Whether a read is due after changes on disk
     reading: bool,
     previewer: Option<preview::Previewer>,
+    /// Remove from Tag, of the rows' menus: enabled, and shown, only in a tag's place
+    untag: Option<gio::SimpleAction>,
 }
 
 #[derive(Debug)]
@@ -502,6 +508,16 @@ impl App {
             RowAction::CopyBibtex => {
                 WidgetExt::display(root).clipboard().set_text(&entry.bib.to_bibtex());
                 toast(&widgets.toasts, "BibTeX copied");
+            }
+            RowAction::RemoveFromTag => {
+                let Some(tag) = self.find.borrow().tag.clone() else { return };
+                let mut entry = entry.clone();
+                let tags: Vec<String> = entry.tags().into_iter().filter(|t| *t != tag).collect();
+                entry.set_tags(&tags);
+                match entry.write() {
+                    Ok(()) => self.reload(widgets, sender, false),
+                    Err(e) => toast(&widgets.toasts, &format!("Could not write {}: {e}", entry.key())),
+                }
             }
             // Without asking: the toast's Undo, or the trash, gives it back
             RowAction::Trash => match gio::File::for_path(&entry.dir).trash(gio::Cancellable::NONE) {
@@ -804,6 +820,7 @@ impl Component for App {
                 let s = sender.input_sender().clone();
                 preview::previewer(move |step| s.emit(Msg::Step(step)))
             },
+            untag: None,
         };
         let (places, list) = (model.places.widget(), &model.list.view);
         let widgets = view_output!();
@@ -857,12 +874,13 @@ impl Component for App {
         group.add_action(&model.settings.create_action("sort"));
         // The rows' menus: their entry's key, or their tag
         type ToMsg = fn(String) -> Msg;
-        let row_actions: [(&str, ToMsg); 8] = [
+        let row_actions: [(&str, ToMsg); 9] = [
             ("entry-read", |k| Msg::Row(RowAction::Read, k)),
             ("entry-preview", |k| Msg::Row(RowAction::Preview, k)),
             ("entry-show", |k| Msg::Row(RowAction::ShowInFiles, k)),
             ("entry-copy-key", |k| Msg::Row(RowAction::CopyKey, k)),
             ("entry-copy-bibtex", |k| Msg::Row(RowAction::CopyBibtex, k)),
+            ("entry-untag", |k| Msg::Row(RowAction::RemoveFromTag, k)),
             ("entry-trash", |k| Msg::Row(RowAction::Trash, k)),
             ("tag-rename", Msg::RenameTag),
             ("tag-remove", Msg::RemoveTag),
@@ -878,6 +896,8 @@ impl Component for App {
             action
         };
         row_actions.into_iter().for_each(|(name, msg)| group.add_action(&text_action(name, msg)));
+        model.untag = group.lookup_action("entry-untag").and_downcast();
+        model.untag.iter().for_each(|a| a.set_enabled(false));
         root.insert_action_group("win", Some(&group));
         let app = relm4::main_application();
         // GNOME Shell's search (`search.rs`): an entry chosen there, or the words searched
@@ -1127,6 +1147,9 @@ impl Component for App {
                     sender.spawn_oneshot_command(move || Cmd::Fetched(fetch::find(&id).map(|b| vec![b])));
                 }
             }
+        }
+        if let Some(untag) = &self.untag {
+            untag.set_enabled(self.find.borrow().tag.is_some());
         }
         self.update_view(widgets, sender);
     }

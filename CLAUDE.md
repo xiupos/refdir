@@ -94,7 +94,8 @@ Crates are renamed: `gtk` is gtk4 and `adw` is libadwaita. Check with `cargo tes
   writes many files at once. The list is rebuilt only if what was read changed.
 - **Menus on rows.** A right click, or a long press with a finger, opens a row's menu
   (`context_menu`, a `PopoverMenu` the row keeps): an entry's Read, Preview, Show in Files, Copy Key,
-  Copy BibTeX, Move to Trash; a tag's Rename and Remove. Their actions are the window's, with
+  Copy BibTeX, Remove from Tag (only in a tag's place: its action is disabled elsewhere, and
+  the items hide when theirs is, `hidden-when`), Move to Trash; a tag's Rename and Remove. Their actions are the window's, with
   the key or the tag as their target, so that one menu model serves every row. The entry pane's
   buttons for the same send them to the window too (`RowAction`), which does each in one place.
 - **Previews** are Sushi's (`org.gnome.NautilusPreviewer2`), as Files shows them: the space bar
