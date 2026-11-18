@@ -11,6 +11,8 @@ struct EntryPage: View {
     @FocusState private var writingNote: Bool
     @State private var newTag = ""
     @State private var reading: URL?
+    /// The PDF being opened in another app
+    @State private var openingIn: URL?
     @State private var downloading = false
     /// What was copied last: shown on its button
     @State private var copied: String?
@@ -160,8 +162,9 @@ struct EntryPage: View {
     @ViewBuilder
     private var mainButton: some View {
         if let pdf = entry.pdf() {
-            Button("Read") { reading = pdf }
+            Button("Read") { openingIn = pdf }
                 .buttonStyle(.borderedProminent)
+                .background { OpenIn(url: $openingIn) { reading = $0 } }
         } else if entry.bib.get("eprint") != nil {
             Button(downloading ? "Downloading…" : "Get PDF") {
                 downloading = true
@@ -249,6 +252,56 @@ private struct BibEditor: View {
             dismiss()
         } catch {
             problem = error.localizedDescription
+        }
+    }
+}
+
+/// "Open in" another app, which may keep the page it was at, as Quick Look does not; anchored on
+/// the view it is the background of. `none` is given the file when no app can open it
+struct OpenIn: UIViewRepresentable {
+    @Binding var url: URL?
+    let none: (URL) -> Void
+
+    func makeUIView(context: Context) -> UIView {
+        UIView()
+    }
+
+    func updateUIView(_ view: UIView, context: Context) {
+        context.coordinator.parent = self
+        // `ViewThatFits` makes views it does not show: only one in a window presents
+        guard let url, view.window != nil, context.coordinator.controller == nil else { return }
+        let controller = UIDocumentInteractionController(url: url)
+        controller.delegate = context.coordinator
+        context.coordinator.controller = controller
+        if !controller.presentOpenInMenu(from: view.bounds, in: view, animated: true) {
+            DispatchQueue.main.async {
+                context.coordinator.done()
+                none(url)
+            }
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, UIDocumentInteractionControllerDelegate {
+        var parent: OpenIn
+        /// Kept while its menu shows, which it does not keep itself
+        var controller: UIDocumentInteractionController?
+
+        init(_ parent: OpenIn) {
+            self.parent = parent
+        }
+
+        func done() {
+            controller = nil
+            parent.url = nil
+        }
+
+        func documentInteractionControllerDidDismissOpenInMenu(_ controller: UIDocumentInteractionController) {
+            done()
         }
     }
 }

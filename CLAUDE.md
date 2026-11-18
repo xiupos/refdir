@@ -98,6 +98,10 @@ Everything that imports SwiftUI needs the iPad.
   how a PDF opens in another app: iOS has no default app for PDFs. Opened from the list, Quick
   Look has the list's PDFs (`items`), the one opened first, so that a swipe goes on to the PDFs
   before and after it; entries without one are passed over.
+- **Read on an entry's page** opens its PDF in another app (`OpenIn`, the "Open in" menu of a
+  `UIDocumentInteractionController`), which may keep the page it was at, as Quick Look does not;
+  Quick Look if no app can. The list's Read, and the files, stay Quick Look's. An app that opens
+  documents in place writes its markup into the library's file; others take a copy.
 - **Adding** takes an identifier, or BibTeX (text starting with `@`), added as it is under the
   rules of adding (`addEntries`), for what INSPIRE and doi.org do not have. It is the alert's
   one-line field: BibTeX reads the same whether pasted line breaks are kept or made spaces.
@@ -124,7 +128,8 @@ Everything that imports SwiftUI needs the iPad.
 What only the iPad can check:
 
 - That it builds: `appCategory: .reference`, and the SwiftUI and Quick Look code
-- Everything in the UI: choosing the folder, adding, Get PDF, Read and markup, tags, the note,
+- Everything in the UI: choosing the folder, adding, Get PDF, Read and markup, Read in another
+  app (opened in place or copied, the page kept), tags, the note,
   editing BibTeX, exporting, deleting, the layouts on iPhone and iPad
 - Synced changes showing when the app becomes active
 - That Playgrounds builds the dark and tinted icons (`appearances` in the AppIcon's
