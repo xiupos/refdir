@@ -106,6 +106,9 @@ Crates are renamed: `gtk` is gtk4 and `adw` is libadwaita. Check with `cargo tes
   preview that, the list's focus following, but only while its `ParentHandle` is the handle
   last given: Sushi sends them to every program that listens, Files too. Sushi is told the window's handle (`x11:`, or an
   exported `wayland:` one), so that it shows over it. Without Sushi, the file opens in its app.
+- **Opening a file** is GIO's default app for it (`launch_default_for_uri_async`), not
+  `gtk::FileLauncher`: that goes through the portal, which starts the app with
+  `GIO_USE_VFS=local`, and Papers, without GIO's metadata, forgets the page it was at.
 - **Renaming a tag** (`refdir::rename_tag`) writes every entry that has it; a name some have
   already merges the two. The place follows the tag. A dialog opened from a menu focuses its
   field when shown (`connect_map`), as the menu gives focus back while closing.

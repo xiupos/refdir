@@ -27,14 +27,27 @@ relm4::new_stateless_action!(ExportAction, WindowActions, "export");
 relm4::new_stateless_action!(AboutAction, WindowActions, "about");
 relm4::new_stateless_action!(QuitAction, WindowActions, "quit");
 
-/// Opens a file in the app the user has for it, or shows it in its folder
+/// Opens a file in the app the user has for it, or shows it in its folder. Not through the portal,
+/// as `gtk::FileLauncher` would: the portal starts the app with `GIO_USE_VFS=local`, without GIO's
+/// metadata, where Papers keeps the page it was at
 pub fn open_file(path: &Path, in_folder: bool, parent: &impl IsA<gtk::Widget>) {
-    let window = parent.root().and_downcast::<gtk::Window>();
-    let launcher = gtk::FileLauncher::new(Some(&gio::File::for_path(path)));
+    let file = gio::File::for_path(path);
     if in_folder {
+        let window = parent.root().and_downcast::<gtk::Window>();
+        let launcher = gtk::FileLauncher::new(Some(&file));
         launcher.open_containing_folder(window.as_ref(), gio::Cancellable::NONE, |_| {});
     } else {
-        launcher.launch(window.as_ref(), gio::Cancellable::NONE, |_| {});
+        let context = parent.display().app_launch_context();
+        gio::AppInfo::launch_default_for_uri_async(
+            &file.uri(),
+            Some(&context),
+            gio::Cancellable::NONE,
+            |r| {
+                if let Err(e) = r {
+                    eprintln!("Cannot open: {e}");
+                }
+            },
+        );
     }
 }
 
