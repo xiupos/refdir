@@ -79,8 +79,7 @@ Everything that imports SwiftUI needs the iPad.
 - **The places** are all entries, then the tags (`tagItems`, in `byNamespace`'s order): each
   namespace's under its name, its first letter upper case, each by its name there, then the
   others under "Tags", as refdir's GNOME app shows them. One `ForEach`, with the headings as rows
-  that cannot be selected: rows in `Section`s made by a `ForEach` did not all show on the iPad, empty ones in their place,
-  neither when the list was made again on a change (`.id`) nor with All Entries in a section.
+  that cannot be selected, as `Section`s made by a `ForEach` lose rows (Unsolved).
 - **Rows are made when the library is read** (`Row`), off the main thread: the title is TeX made
   plain and the PDF is found in the folder, so neither is done while scrolling or typing.
 - **The order** (newest first, title, first author, key) is `Store.order`, kept in
@@ -130,6 +129,18 @@ Everything that imports SwiftUI needs the iPad.
   It is refdir's GNOME Shell search.
 - **Deleting** removes the entry's folder after asking: iOS has no trash for the user's folders.
 - **Exporting** shares a `.bib` written when it is shared (`BibFile`, a `FileRepresentation`).
+
+## Unsolved
+
+- **`Section`s made by a `ForEach` lose rows.** The places as one `Section` a namespace, made by
+  a `ForEach` over the groups, were drawn on the iPhone and the iPad with later tags missing and
+  empty space in their place (Status: Reading, not To read; Topics: two of four), with nothing
+  in the console. Not mended by: the rows without `.badge`, `.dropDestination`, and
+  `.contextMenu`, or with them on an `HStack` around the `Label`; the list made again when the
+  tags change (`.id(store.tags)`); All Entries in a section, or every section from data, one
+  `ForEach` of one kind of row each (heplio-ios's mend, whose sections are written, not made by
+  a `ForEach`); sections that fold (`Section(isExpanded:)`, `.listStyle(.sidebar)`). Not yet
+  tried: the same in an app of its own, to tell iOS's bug from ours.
 
 ## Not verified
 
