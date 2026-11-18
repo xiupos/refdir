@@ -102,6 +102,9 @@ Everything that imports SwiftUI needs the iPad.
   `UIDocumentInteractionController`), which may keep the page it was at, as Quick Look does not;
   Quick Look if no app can. The list's Read, and the files, stay Quick Look's. An app that opens
   documents in place writes its markup into the library's file; others take a copy.
+- **Dragging a row** (`dragged`) gives its PDF, as a file, to other apps, and its key, seen only
+  within the app (`.ownProcess`), to a tag of the places, which then the entry has. Other apps
+  take a copy. Only an iPad shows the places and the list together, and drags between apps.
 - **Adding** takes an identifier, or BibTeX (text starting with `@`), added as it is under the
   rules of adding (`addEntries`), for what INSPIRE and doi.org do not have. It is the alert's
   one-line field: BibTeX reads the same whether pasted line breaks are kept or made spaces.
@@ -129,7 +132,7 @@ What only the iPad can check:
 
 - That it builds: `appCategory: .reference`, and the SwiftUI and Quick Look code
 - Everything in the UI: choosing the folder, adding, Get PDF, Read and markup, Read in another
-  app (opened in place or copied, the page kept), tags, the note,
+  app (opened in place or copied, the page kept), dragging rows to other apps and to tags, tags, the note,
   editing BibTeX, exporting, deleting, the layouts on iPhone and iPad
 - Synced changes showing when the app becomes active
 - That Playgrounds builds the dark and tinted icons (`appearances` in the AppIcon's

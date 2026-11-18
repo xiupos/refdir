@@ -344,6 +344,16 @@ private struct Places: View {
                         Label(t.tag, systemImage: "tag")
                             .badge(t.count)
                             .tag(Place.tag(t.tag))
+                            // An entry of the list dropped on a tag, as its key, is given the tag
+                            .dropDestination(for: String.self) { keys, _ in
+                                let entries = keys.compactMap { k in store.rows.first { $0.id == k }?.entry }
+                                for entry in entries {
+                                    store.edit(entry) { e in
+                                        if !e.tags.contains(t.tag) { e.setTags(e.tags + [t.tag]) }
+                                    }
+                                }
+                                return !entries.isEmpty
+                            }
                             .contextMenu {
                                 Button("Rename Tag…", systemImage: "pencil") {
                                     newName = t.tag
@@ -412,6 +422,14 @@ private struct EntryList: View {
     @State private var reading: URL?
     @State private var deleting: Entry?
 
+    /// Dragged, a row is its PDF to other apps, and its key, seen only within the app, to a tag of
+    /// the places
+    private func dragged(_ row: Row) -> NSItemProvider {
+        let item = row.pdf.flatMap { NSItemProvider(contentsOf: $0) } ?? NSItemProvider()
+        item.registerObject(row.entry.key as NSString, visibility: .ownProcess)
+        return item
+    }
+
     private var inPlace: [Row] { store.rows.filter { place.has($0.entry) } }
 
     var body: some View {
@@ -427,6 +445,7 @@ private struct EntryList: View {
                 }
             }
             .tag(row.id)
+            .onDrag { dragged(row) }
             // Only to the left: a swipe to the right goes back to the places
             .swipeActions(edge: .trailing) {
                 Button("Delete…", systemImage: "trash") { deleting = row.entry }
