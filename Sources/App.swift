@@ -323,6 +323,13 @@ struct RootView: View {
     }
 }
 
+/// A row of the places after All Entries: a heading, or a tag's place
+private struct PlaceItem: Identifiable {
+    let id: String
+    let heading: String?
+    let tag: TagCount?
+}
+
 /// Every entry, then the tags
 private struct Places: View {
     @Environment(Store.self) private var store
@@ -333,35 +340,68 @@ private struct Places: View {
     @State private var newName = ""
     @State private var removing: String?
 
+    /// The tags in the places' order (`byNamespace`), with a heading over each namespace's, by its
+    /// name with its first letter upper case, and over the others, "Tags"
+    private var tagItems: [PlaceItem] {
+        var items: [PlaceItem] = []
+        var last: String?
+        for t in byNamespace(store.tags) {
+            var key = "tag"
+            var heading = "Tags"
+            if let space = namespace(t.tag)?.space {
+                // The same namespace ignoring ASCII case
+                key = "ns:" + String(String.UnicodeScalarView(space.asciiLowercased))
+                heading = space.prefix(1).uppercased() + String(space.dropFirst())
+            }
+            if key != last {
+                items.append(PlaceItem(id: "heading " + key, heading: heading, tag: nil))
+                last = key
+            }
+            items.append(PlaceItem(id: "tag " + t.tag, heading: nil, tag: t))
+        }
+        return items
+    }
+
+    /// A tag's place: in a namespace, by its name there
+    private func tagRow(_ t: TagCount) -> some View {
+        Label(namespace(t.tag)?.name ?? t.tag, systemImage: "tag")
+            .badge(t.count)
+            .tag(Place.tag(t.tag))
+            .dropDestination(for: String.self) { keys, _ in give(t.tag, keys) }
+            .contextMenu {
+                Button("Rename Tag…", systemImage: "pencil") {
+                    newName = t.tag
+                    renaming = t.tag
+                }
+                Button("Remove Tag…", systemImage: "tag.slash", role: .destructive) { removing = t.tag }
+            }
+    }
+
+    /// Entries of the list dropped on a tag, as their keys, are given the tag
+    private func give(_ tag: String, _ keys: [String]) -> Bool {
+        let entries = keys.compactMap { k in store.rows.first { $0.id == k }?.entry }
+        for entry in entries {
+            store.edit(entry) { e in
+                if !e.tags.contains(tag) { e.setTags(e.tags + [tag]) }
+            }
+        }
+        return !entries.isEmpty
+    }
+
     var body: some View {
         List(selection: $place) {
             Label("All Entries", systemImage: "books.vertical")
                 .badge(store.rows.count)
                 .tag(Place.all)
-            if !store.tags.isEmpty {
-                Section("Tags") {
-                    ForEach(store.tags) { t in
-                        Label(t.tag, systemImage: "tag")
-                            .badge(t.count)
-                            .tag(Place.tag(t.tag))
-                            // An entry of the list dropped on a tag, as its key, is given the tag
-                            .dropDestination(for: String.self) { keys, _ in
-                                let entries = keys.compactMap { k in store.rows.first { $0.id == k }?.entry }
-                                for entry in entries {
-                                    store.edit(entry) { e in
-                                        if !e.tags.contains(t.tag) { e.setTags(e.tags + [t.tag]) }
-                                    }
-                                }
-                                return !entries.isEmpty
-                            }
-                            .contextMenu {
-                                Button("Rename Tag…", systemImage: "pencil") {
-                                    newName = t.tag
-                                    renaming = t.tag
-                                }
-                                Button("Remove Tag…", systemImage: "tag.slash", role: .destructive) { removing = t.tag }
-                            }
-                    }
+            ForEach(tagItems) { item in
+                if let t = item.tag {
+                    tagRow(t)
+                } else {
+                    Text(item.heading ?? "")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 12)
+                        .selectionDisabled()
                 }
             }
         }

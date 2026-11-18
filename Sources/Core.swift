@@ -468,6 +468,28 @@ func addEntries(_ folder: URL, _ bibs: [Bib]) -> (added: [Entry], refused: [(key
     return (added, refused)
 }
 
+/// A tag's namespace and its name in it: `topic:AdS/CFT` is `AdS/CFT` in `topic`. nil if it has
+/// no `:`, or nothing before or after the first
+func namespace(_ tag: String) -> (space: String, name: String)? {
+    guard let i = tag.firstIndex(of: ":") else { return nil }
+    let (space, name) = (String(tag[..<i]).trimmed, String(tag[tag.index(after: i)...]).trimmed)
+    return space.isEmpty || name.isEmpty ? nil : (space, name)
+}
+
+/// Tags in the order the places show them: each namespace's together (the same ignoring ASCII
+/// case), the namespaces by name, then the tags in none; by name within each
+func byNamespace(_ tags: [TagCount]) -> [TagCount] {
+    let space = { (tag: String) in namespace(tag)?.space.asciiLowercased }
+    return tags.sorted { (a: TagCount, b: TagCount) -> Bool in
+        switch (space(a.tag), space(b.tag)) {
+        case (nil, .some): return false
+        case (.some, nil): return true
+        case let (x?, y?) where x != y: return x.lexicographicallyPrecedes(y) { $0.value < $1.value }
+        default: return byName(a.tag, b.tag)
+        }
+    }
+}
+
 /// Whether a text can be a tag: not blank, and without a comma, which separates tags
 func isTag(_ tag: String) -> Bool {
     !tag.trimmed.isEmpty && !tag.contains(",")
@@ -1094,6 +1116,15 @@ enum Tests {
         }
         for case let c as [Any] in section("is_tag") {
             check(isTag(c[0] as! String) == (c[1] as! Bool), "tag \(c)")
+        }
+        for case let c as [Any] in section("namespaces") {
+            let tag = c[0] as! String
+            let found = namespace(tag)
+            check(found?.space == c[1] as? String && (found?.name ?? tag) == c[2] as! String, "namespace \(c)")
+        }
+        for case let c as [String: [String]] in section("namespace_order") {
+            let shown = byNamespace(c["tags"]!.map { TagCount(tag: $0, count: 1) }).map(\.tag)
+            check(shown == c["shown"]!, "namespace order: \(shown)")
         }
         folders()
         print("\(checks - failures)/\(checks) passed")

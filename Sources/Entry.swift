@@ -286,7 +286,7 @@ struct OpenIn: UIViewRepresentable {
     }
 
     @MainActor
-    final class Coordinator: NSObject, UIDocumentInteractionControllerDelegate {
+    final class Coordinator: NSObject, @preconcurrency UIDocumentInteractionControllerDelegate {
         var parent: OpenIn
         /// Kept while its menu shows, which it does not keep itself
         var controller: UIDocumentInteractionController?
