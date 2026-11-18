@@ -136,7 +136,8 @@ struct PlaceRow {
 impl FactoryComponent for PlaceRow {
     type Init = (Option<String>, usize);
     type Input = ();
-    type Output = ();
+    /// An entry dropped on a tag, by its key, and the tag
+    type Output = (String, String);
     type CommandOutput = ();
     type ParentWidget = gtk::ListBox;
 
@@ -175,10 +176,17 @@ impl FactoryComponent for PlaceRow {
         _: &DynamicIndex,
         root: Self::Root,
         _: &gtk::ListBoxRow,
-        _: FactorySender<Self>,
+        sender: FactorySender<Self>,
     ) -> Self::Widgets {
         let widgets = view_output!();
         if let Some(tag) = &self.tag {
+            // An entry of the list dropped on a tag, as its key, is given the tag
+            let target = gtk::DropTarget::new(glib::Type::STRING, gdk::DragAction::COPY);
+            let t = tag.clone();
+            target.connect_drop(move |_, v, _, _| {
+                v.get::<String>().is_ok_and(|key| sender.output((key, t.clone())).is_ok())
+            });
+            root.add_controller(target);
             let items: &[_] = &[
                 ("Rename Tag…", "win.tag-rename", tag.as_str()),
                 ("Remove Tag…", "win.tag-remove", tag.as_str()),
@@ -194,7 +202,7 @@ struct EntryItem {
     entry: Entry,
     title: String,
     subtitle: String,
-    pdf: bool,
+    pdf: Option<PathBuf>,
     text: String,
 }
 
@@ -205,7 +213,7 @@ impl EntryItem {
             entry: entry.clone(),
             title: entry.title(),
             subtitle: subtitle.collect::<Vec<_>>().join(" · "),
-            pdf: entry.pdf().is_some(),
+            pdf: entry.pdf(),
             text: entry.search_text(),
         }
     }
@@ -216,6 +224,7 @@ struct EntryWidgets {
     subtitle: gtk::Label,
     pdf: gtk::Image,
     menu: gtk::PopoverMenu,
+    drag: gtk::DragSource,
 }
 
 impl RelmListItem for EntryItem {
@@ -257,7 +266,15 @@ impl RelmListItem for EntryItem {
             }
         }
         let menu = context_menu(&root);
-        (root, EntryWidgets { title, subtitle, pdf, menu })
+        // Dragged, a row is its PDF to other apps, and its key to a tag of the sidebar
+        let drag = gtk::DragSource::new();
+        drag.set_actions(gdk::DragAction::COPY);
+        drag.connect_drag_begin(|d, _| {
+            let row = gtk::WidgetPaintable::new(d.widget().as_ref());
+            d.set_icon(Some(&row), 0, 0);
+        });
+        root.add_controller(drag.clone());
+        (root, EntryWidgets { title, subtitle, pdf, menu, drag })
     }
 
     fn bind(&mut self, w: &mut EntryWidgets, root: &mut gtk::Box) {
@@ -265,9 +282,13 @@ impl RelmListItem for EntryItem {
         root.set_widget_name(self.entry.key());
         w.title.set_label(&self.title);
         w.subtitle.set_label(&self.subtitle);
-        w.pdf.set_visible(self.pdf);
+        w.pdf.set_visible(self.pdf.is_some());
         let key = self.entry.key();
-        let read: &[_] = if self.pdf { &[("Read", "win.entry-read", key)] } else { &[] };
+        let pdf = self.pdf.iter().map(|p| gdk::FileList::from_array(&[gio::File::for_path(p)]).to_value());
+        let content: Vec<_> =
+            pdf.chain([key.to_value()]).map(|v| gdk::ContentProvider::for_value(&v)).collect();
+        w.drag.set_content(Some(&gdk::ContentProvider::new_union(&content)));
+        let read: &[_] = if self.pdf.is_some() { &[("Read", "win.entry-read", key)] } else { &[] };
         let open: Vec<_> = read
             .iter()
             .copied()
@@ -325,6 +346,8 @@ enum Msg {
     RemoveTag(String),
     /// Renames a tag in every entry that has it, or removes it if the new name is empty
     Retag(String, String),
+    /// Gives an entry, by its key, a tag: one dropped on the tag
+    Tag(String, String),
     /// Moves an entry's folder back from the trash
     Untrash(PathBuf),
     ChooseFolder,
@@ -769,7 +792,9 @@ impl Component for App {
             read: Vec::new(),
             tags: Vec::new(),
             find,
-            places: FactoryVecDeque::builder().launch(gtk::ListBox::new()).detach(),
+            places: FactoryVecDeque::builder()
+                .launch(gtk::ListBox::new())
+                .forward(sender.input_sender(), |(key, tag)| Msg::Tag(key, tag)),
             list,
             shown: None,
             watched: Vec::new(),
@@ -929,6 +954,18 @@ impl Component for App {
                     s.input(Msg::Retag(tag.clone(), String::new()))
                 });
                 dialog.present(Some(root));
+            }
+            Msg::Tag(key, tag) => {
+                let Some(mut entry) = self.entries().find(|e| e.key() == key).cloned() else { return };
+                let mut tags = entry.tags();
+                if !tags.contains(&tag) {
+                    tags.push(tag.clone());
+                    entry.set_tags(&tags);
+                    match entry.write() {
+                        Ok(()) => self.reload(widgets, &sender, false),
+                        Err(e) => toast(&widgets.toasts, &format!("Cannot write {key}: {e}")),
+                    }
+                }
             }
             Msg::Untrash(dir) => match untrash(&dir) {
                 Ok(()) => {

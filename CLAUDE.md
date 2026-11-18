@@ -109,6 +109,10 @@ Crates are renamed: `gtk` is gtk4 and `adw` is libadwaita. Check with `cargo tes
 - **Opening a file** is GIO's default app for it (`launch_default_for_uri_async`), not
   `gtk::FileLauncher`: that goes through the portal, which starts the app with
   `GIO_USE_VFS=local`, and Papers, without GIO's metadata, forgets the page it was at.
+- **Dragging a row** gives its PDF, as a file, to other apps, and its key to a tag of the
+  places, which then the entry has (`Msg::Tag`). Both are one `ContentProvider` union, the PDF
+  first: an app that takes text gets the PDF's path, or the key when there is no PDF. The tag's
+  `DropTarget` takes a `String`, which within the app is the key.
 - **Renaming a tag** (`refdir::rename_tag`) writes every entry that has it; a name some have
   already merges the two. The place follows the tag. A dialog opened from a menu focuses its
   field when shown (`connect_map`), as the menu gives focus back while closing.
