@@ -79,7 +79,8 @@ Everything that imports SwiftUI needs the iPad.
 - **The places** are all entries, then the tags (`tagItems`, in `byNamespace`'s order): each
   namespace's under its name, its first letter upper case, each by its name there, then the
   others under "Tags", as refdir's GNOME app shows them. One `ForEach`, with the headings as rows
-  that cannot be selected: rows in `Section`s made by a `ForEach` did not all show on the iPad.
+  that cannot be selected: rows in `Section`s made by a `ForEach` did not all show on the iPad, empty ones in their place,
+  neither when the list was made again on a change (`.id`) nor with All Entries in a section.
 - **Rows are made when the library is read** (`Row`), off the main thread: the title is TeX made
   plain and the PDF is found in the folder, so neither is done while scrolling or typing.
 - **The order** (newest first, title, first author, key) is `Store.order`, kept in

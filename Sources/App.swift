@@ -367,7 +367,7 @@ private struct Places: View {
         Label(namespace(t.tag)?.name ?? t.tag, systemImage: "tag")
             .badge(t.count)
             .tag(Place.tag(t.tag))
-            .dropDestination(for: String.self) { keys, _ in give(t.tag, keys) }
+            .dropDestination(for: String.self) { keys, _ in return give(t.tag, keys) }
             .contextMenu {
                 Button("Rename Tag…", systemImage: "pencil") {
                     newName = t.tag
