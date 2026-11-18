@@ -545,6 +545,12 @@ extension EntryList {
         Button("Copy BibTeX", systemImage: "doc.on.clipboard") {
             UIPasteboard.general.string = row.entry.bib.bibtex
         }
+        // In a tag's place, so that taking an entry out of it is not deleting it
+        if case .tag(let tag) = place {
+            Button("Remove from Tag", systemImage: "tag.slash") {
+                store.edit(row.entry) { e in e.setTags(e.tags.filter { $0 != tag }) }
+            }
+        }
         Button("Delete…", systemImage: "trash", role: .destructive) { deleting = row.entry }
     }
 }

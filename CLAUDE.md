@@ -109,7 +109,7 @@ Everything that imports SwiftUI needs the iPad.
   rules of adding (`addEntries`), for what INSPIRE and doi.org do not have. It is the alert's
   one-line field: BibTeX reads the same whether pasted line breaks are kept or made spaces.
 - **Menus on rows** (long press, or a right click on an iPad): an entry's Read, Share PDF, Copy
-  Key, Copy BibTeX, and Delete, so that a key is copied while writing without opening its entry,
+  Key, Copy BibTeX, Remove from Tag (in a tag's place, so that taking it out is not deleting it), and Delete, so that a key is copied while writing without opening its entry,
   with its PDF's first page over them (`FirstPage`, PDFKit's thumbnail, made only when the menu
   shows it), as Files shows a file. A tap on it only closes the menu: SwiftUI's preview has no
   action. A swipe to the left deletes, after asking; nothing is to the right, where a swipe goes
