@@ -86,8 +86,10 @@ Crates are renamed: `gtk` is gtk4 and `adw` is libadwaita. Check with `cargo tes
 - **Three panes**: two `AdwNavigationSplitView`s, one inside the other's content. Under 860sp
   the inner one collapses, under 560sp both.
 - **The places** are one `navigation-sidebar` list: all entries, then the tags with their
-  counts, with a heading over the first tag (`set_header_func`, by the row's widget name;
-  `invalidate_headers` after a rebuild).
+  counts (`refdir::by_namespace`): each namespace's under its name, its first letter upper case,
+  each by its name there, then the others under "Tags". A heading goes over the first row of
+  each group (`set_header_func`, by the row's widget name, `ns:NAMESPACE` or `tag`, ignoring
+  ASCII case; `invalidate_headers` after a rebuild).
 - **The library is watched** with `GFileMonitor`s on its folder and every folder in it, as a
   program makes an entry's folder before its `entry.bib`. Changes read the library again 200 ms
   after the first (`Msg::Changed`), once for all that come meanwhile: renaming a tag, or a sync,

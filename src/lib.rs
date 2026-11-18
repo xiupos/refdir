@@ -266,6 +266,24 @@ pub fn tags<'a>(entries: impl IntoIterator<Item = &'a Entry>) -> Vec<(String, us
     tags
 }
 
+/// A tag's namespace and its name in it: `topic:AdS/CFT` is `AdS/CFT` in `topic`. `None` if it has
+/// no `:`, or nothing before or after the first
+pub fn namespace(tag: &str) -> Option<(&str, &str)> {
+    let (space, name) = tag.split_once(':')?;
+    let (space, name) = (space.trim(), name.trim());
+    (!space.is_empty() && !name.is_empty()).then_some((space, name))
+}
+
+/// Tags in the order the places show them: each namespace's together (the same ignoring ASCII
+/// case), the namespaces by name, then the tags in none; by name within each
+pub fn by_namespace(tags: &mut [(String, usize)]) {
+    let space = |t: &str| namespace(t).map(|(s, _)| s.to_ascii_lowercase());
+    tags.sort_by(|(a, _), (b, _)| {
+        let (x, y) = (space(a), space(b));
+        x.is_none().cmp(&y.is_none()).then_with(|| x.cmp(&y)).then_with(|| by_name(a, b))
+    });
+}
+
 /// Whether a text can be a tag: not blank, and without a comma, which separates tags
 pub fn is_tag(tag: &str) -> bool {
     !tag.trim().is_empty() && !tag.contains(',')

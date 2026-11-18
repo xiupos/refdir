@@ -109,6 +109,12 @@ pub enum RowAction {
     Trash,
 }
 
+/// A namespace as a heading: its first letter upper case
+fn capitalized(text: &str) -> String {
+    let mut chars = text.chars();
+    chars.next().map(|c| c.to_uppercase().chain(chars).collect()).unwrap_or_default()
+}
+
 /// `N entries`, or `1 entry`
 fn entries_count(n: usize) -> String {
     if n == 1 { "1 entry".into() } else { format!("{n} entries") }
@@ -146,8 +152,12 @@ impl FactoryComponent for PlaceRow {
 
     view! {
         gtk::ListBoxRow {
-            // The kind of row, for the sidebar's heading
-            set_widget_name: if self.tag.is_some() { "tag" } else { "all" },
+            // The row's group, for the sidebar's headings
+            set_widget_name: &match self.tag.as_deref().map(refdir::namespace) {
+                None => "all".into(),
+                Some(None) => "tag".into(),
+                Some(Some((space, _))) => format!("ns:{space}"),
+            },
             #[name = "inner"]
             gtk::Box {
                 set_spacing: 12,
@@ -156,7 +166,8 @@ impl FactoryComponent for PlaceRow {
                     set_visible: self.tag.is_none(),
                 },
                 gtk::Label {
-                    set_label: self.tag.as_deref().unwrap_or("All Entries"),
+                    // In a namespace, under its heading, by its name there
+                    set_label: self.tag.as_deref().map_or("All Entries", |t| refdir::namespace(t).map_or(t, |(_, n)| n)),
                     set_xalign: 0.0,
                     set_hexpand: true,
                     set_ellipsize: gtk::pango::EllipsizeMode::End,
@@ -431,6 +442,7 @@ impl App {
         }
         self.read = read;
         self.tags = refdir::tags(self.entries());
+        refdir::by_namespace(&mut self.tags);
         let mut find = self.find.borrow_mut();
         if find.tag.as_ref().is_some_and(|t| !self.tags.iter().any(|(tag, _)| tag == t)) {
             find.tag = None;
@@ -672,11 +684,14 @@ impl Component for App {
                                 #[local_ref]
                                 places -> gtk::ListBox {
                                     add_css_class: "navigation-sidebar",
-                                    // A heading over the first tag
+                                    // A heading over the first tag of each namespace, by its name, and of
+                                    // the tags in none
                                     set_header_func: |row, before| {
-                                        let first = row.widget_name() == "tag"
-                                            && before.is_none_or(|b| b.widget_name() != "tag");
-                                        let label = gtk::Label::builder().label("Tags").xalign(0.0).margin_top(12).margin_start(12);
+                                        let group = |r: &gtk::ListBoxRow| r.widget_name().to_ascii_lowercase();
+                                        let first = group(row) != "all" && before.is_none_or(|b| group(b) != group(row));
+                                        let name = row.widget_name();
+                                        let heading = name.strip_prefix("ns:").map_or("Tags".into(), capitalized);
+                                        let label = gtk::Label::builder().label(heading).xalign(0.0).margin_top(12).margin_start(12);
                                         row.set_header(first.then(|| label.css_classes(["heading", "dim-label"]).build()).as_ref());
                                     },
                                     connect_row_activated[sender] => move |_, row| sender.input(Msg::Place(row.index() as usize)),

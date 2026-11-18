@@ -17,6 +17,10 @@ citation key, with one BibTeX entry in `entry.bib`:
   values are kept as written. A folder whose `entry.bib` does not hold one entry is unreadable,
   and is left alone.
 - **Tags** are `keywords`, separated by commas, each trimmed. **The note** is `comment`.
+- **A namespace.** A tag `namespace:name`, split at its first `:`, both trimmed and not empty,
+  is in the namespace, which is the same ignoring ASCII case. Programs show the tags of each
+  namespace together, under the namespace's name, the namespaces by name, before the tags in
+  none; the tag itself is still the whole text.
 - **Files** are the other files in the entry's folder, but those whose names start with `.`.
   They are ordered by name, ignoring ASCII case. **The PDF** is the first of them whose name
   ends with `.pdf`, ignoring ASCII case: what "read" opens, and what says the entry has its

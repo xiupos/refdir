@@ -177,3 +177,16 @@ fn rename_tag() {
         assert_eq!(refdir::is_tag(s(&c[0])), c[1] == true, "{c}");
     }
 }
+
+#[test]
+fn namespaces() {
+    for c in cases("namespaces") {
+        let (space, name) = refdir::namespace(s(&c[0])).unzip();
+        assert_eq!((space, name.unwrap_or(s(&c[0]))), (c[1].as_str(), s(&c[2])), "{c}");
+    }
+    for c in cases("namespace_order") {
+        let mut tags: Vec<(String, usize)> = strings(&c["tags"]).into_iter().map(|t| (t, 1)).collect();
+        refdir::by_namespace(&mut tags);
+        assert_eq!(tags.into_iter().map(|(t, _)| t).collect::<Vec<_>>(), strings(&c["shown"]), "{c}");
+    }
+}

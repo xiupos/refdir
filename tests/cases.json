@@ -798,5 +798,57 @@
       "a,b",
       false
     ]
+  ],
+  "namespaces": [
+    [
+      "topic:AdS/CFT",
+      "topic",
+      "AdS/CFT"
+    ],
+    [
+      "to-read",
+      null,
+      "to-read"
+    ],
+    [
+      "a:b:c",
+      "a",
+      "b:c"
+    ],
+    [
+      "topic: AdS",
+      "topic",
+      "AdS"
+    ],
+    [
+      ":x",
+      null,
+      ":x"
+    ],
+    [
+      "x:",
+      null,
+      "x:"
+    ]
+  ],
+  "namespace_order": [
+    {
+      "tags": [
+        "to-read",
+        "topic:b",
+        "Method:x",
+        "a",
+        "Topic:a",
+        "method:y"
+      ],
+      "shown": [
+        "Method:x",
+        "method:y",
+        "Topic:a",
+        "topic:b",
+        "a",
+        "to-read"
+      ]
+    }
   ]
 }

@@ -94,7 +94,9 @@ fn main() -> ExitCode {
             (Some([old, new]), _) => retag(&library, old, new),
             (_, Some(tag)) => retag(&library, &tag, ""),
             _ => {
-                refdir::tags(&library.entries).iter().for_each(|(t, n)| out(&format!("{t}\t{n}\n")));
+                let mut tags = refdir::tags(&library.entries);
+                refdir::by_namespace(&mut tags);
+                tags.iter().for_each(|(t, n)| out(&format!("{t}\t{n}\n")));
                 Ok(true)
             }
         },
