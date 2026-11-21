@@ -121,8 +121,8 @@ Crates are renamed: `gtk` is gtk4 and `adw` is libadwaita. Check with `cargo tes
   field when shown (`connect_map`), as the menu gives focus back while closing.
 - **The entry pane**: the main button is Read (the first PDF), else Get PDF (from
   arXiv). The note is saved when it loses focus, and when the pane goes: another entry opened,
-  or the app closed. Edit BibTeX takes
-  exactly one entry, and keeps the folder's key.
+  or the app closed. Edit BibTeX opens `entry.bib` in the default app for `text/x-bibtex`;
+  the watch shows the edit. An entry that becomes unreadable says why in a toast.
 - **Settings** are GSettings (`net.xiupos.Refdir`: `folder`, else `$REFDIR`; `sort`; the
   window's size, bound to its `default-width`, `default-height`, and `maximized`). Meson
   installs the schema; `build.rs` compiles it into the build. `settings()` takes the built one

@@ -437,6 +437,12 @@ impl App {
                 (e, files)
             })
             .collect();
+        // Entries that have become unreadable
+        for (dir, e) in &library.unreadable {
+            if let Some(entry) = self.entries().find(|entry| entry.dir == *dir) {
+                toast(&widgets.toasts, &format!("{} cannot be read: {e}", entry.key()));
+            }
+        }
         if !force && read == self.read {
             return;
         }

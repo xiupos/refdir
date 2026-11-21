@@ -1,5 +1,5 @@
 //! `EntryPane`: an entry, its tags, note, and files, and what the user does with it: read its PDF or
-//! get it, copy or edit its BibTeX, get it again from INSPIRE, or move it to the trash
+//! get it, copy its BibTeX or edit it in another app, get it again from INSPIRE, or move it to the trash
 
 use crate::{RowAction, open_file};
 use adw::prelude::*;
@@ -117,9 +117,8 @@ pub enum Msg {
     OpenFile(usize),
     AddFiles,
     Files(Vec<PathBuf>),
+    /// Opens `entry.bib` in the app the user has for it
     Edit,
-    /// The edited BibTeX
-    Edited(String),
     Again,
 }
 
@@ -141,58 +140,6 @@ pub enum Cmd {
 fn text(view: &gtk::TextView) -> String {
     let buffer = view.buffer();
     buffer.text(&buffer.start_iter(), &buffer.end_iter(), false).into()
-}
-
-/// The dialog that edits the entry's BibTeX as text; `save` gets the text
-fn ask_edit(bibtex: &str, parent: &impl IsA<gtk::Widget>, save: impl Fn(String) + 'static) {
-    relm4::view! {
-        dialog = adw::Dialog {
-            set_title: "Edit BibTeX",
-            set_content_width: 640,
-            set_content_height: 560,
-            #[wrap(Some)]
-            set_child = &adw::ToolbarView {
-                add_top_bar = &adw::HeaderBar {
-                    set_show_start_title_buttons: false,
-                    set_show_end_title_buttons: false,
-                    pack_start: cancel = &gtk::Button {
-                        set_label: "Cancel",
-                    },
-                    pack_end: done = &gtk::Button {
-                        set_label: "Save",
-                        add_css_class: "suggested-action",
-                    },
-                },
-                #[wrap(Some)]
-                set_content = &gtk::ScrolledWindow {
-                    #[name = "source"]
-                    gtk::TextView {
-                        set_monospace: true,
-                        set_wrap_mode: gtk::WrapMode::WordChar,
-                        set_top_margin: 12,
-                        set_bottom_margin: 12,
-                        set_left_margin: 12,
-                        set_right_margin: 12,
-                    },
-                },
-            },
-        }
-    }
-    source.buffer().set_text(bibtex);
-    let d = dialog.downgrade();
-    cancel.connect_clicked(move |_| {
-        if let Some(d) = d.upgrade() {
-            d.close();
-        }
-    });
-    let d = dialog.downgrade();
-    done.connect_clicked(move |_| {
-        save(text(&source));
-        if let Some(d) = d.upgrade() {
-            d.close();
-        }
-    });
-    dialog.present(Some(parent));
 }
 
 impl EntryPane {
@@ -417,7 +364,7 @@ impl Component for EntryPane {
 
     menu! {
         entry_menu: {
-            "Edit BibTeX…" => EditAction,
+            "Edit BibTeX" => EditAction,
             "Get Again from INSPIRE" => AgainAction,
             "Show in Files" => ShowInFilesAction,
             "Move to Trash" => TrashAction,
@@ -530,23 +477,7 @@ impl Component for EntryPane {
                     }
                 }
             }
-            Msg::Edit => {
-                let s = sender.clone();
-                ask_edit(&self.entry.bib.to_bibtex(), root, move |text| s.input(Msg::Edited(text)));
-            }
-            // The key stays the folder's name
-            Msg::Edited(text) => match Bib::parse(&text) {
-                Ok(bibs) if bibs.len() == 1 => {
-                    let mut bib = bibs.into_iter().next().unwrap();
-                    bib.key = self.entry.key().to_owned();
-                    self.entry.bib = bib;
-                    self.note = self.entry.note();
-                    widgets.note.buffer().set_text(&self.note);
-                    self.write(&sender);
-                }
-                Ok(bibs) => self.toast(&sender, format!("Not saved: {} entries, not one", bibs.len())),
-                Err(e) => self.toast(&sender, format!("Not saved: {e}")),
-            },
+            Msg::Edit => open_file(&self.entry.dir.join(refdir::ENTRY), false, root),
             Msg::Again => {
                 let entry = self.entry.clone();
                 sender.spawn_oneshot_command(move || Cmd::Again(fetch::again(&entry).map(Box::new)));
