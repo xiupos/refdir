@@ -19,7 +19,7 @@ enum Fetch {
     /// The program and where to find it, as INSPIRE asks of its clients
     private static let userAgent: String = {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
-        return "Refdir/\(version) (iOS; https://github.com/xiupos/refdir-ios)"
+        return "Refdir/\(version) (iOS; https://github.com/xiupos/refdir)"
     }()
 
     /// Without a cache: INSPIRE's and doi.org's, 30 seconds; arXiv's, 5 minutes
