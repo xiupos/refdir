@@ -6,6 +6,8 @@ rust-version = "1.88"
 license = "MIT"
 description = "A library of references: a folder of BibTeX entries, a command, and a GNOME app"
 repository = "https://github.com/xiupos/refdir"
+# The iOS app is in the repository, not the crate
+exclude = ["/ios"]
 
 [[bin]]
 name = "refdir"
