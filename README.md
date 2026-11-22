@@ -1,6 +1,6 @@
 # refdir
 
-A file-based reference library. Each entry is a folder, named by its citation key, with its BibTeX in `entry.bib` and its PDFs and other files beside it. There is no database: any program that reads a folder can read it, any sync can carry it, and the `refdir` command, its GNOME app, and [refdir-ios](https://github.com/xiupos/refdir-ios) open the same one. The format is [FORMAT.md](FORMAT.md), with its rules as examples in [tests/cases.json](tests/cases.json).
+A file-based reference library. Each entry is a folder, named by its citation key, with its BibTeX in `entry.bib` and its PDFs and other files beside it. There is no database: any program that reads a folder can read it, any sync can carry it, and the `refdir` command, its GNOME app, and [its iOS app](ios) open the same one. The format is [FORMAT.md](FORMAT.md), with its rules as examples in [tests/cases.json](tests/cases.json).
 
 ## Usage
 
@@ -41,9 +41,8 @@ meson setup build && meson compile -C build               # both, with the app's
 sudo meson install -C build --no-rebuild
 ```
 
-## See also
-
-- [refdir-ios](https://github.com/xiupos/refdir-ios): Refdir for iPhone and iPad
+With [just](https://just.systems), `just test` checks the crate and the iOS app against
+[tests/cases.json](tests/cases.json).
 
 ## License
 

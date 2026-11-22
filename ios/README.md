@@ -1,6 +1,6 @@
-# refdir-ios
+# Refdir for iPhone and iPad
 
-A file-based reference library for iPhone and iPad. Each entry is a folder, named by its citation key, with its BibTeX in `entry.bib` and its PDFs and other files beside it. There is no database: any program that reads a folder can read it, iCloud Drive or any other sync can carry it, and the [refdir](https://github.com/xiupos/refdir) command and its GNOME app open the same one. The format is [refdir's FORMAT.md](https://github.com/xiupos/refdir/blob/main/FORMAT.md).
+The iOS and iPadOS app of [Refdir](..), a file-based reference library in the [Refdir format](../FORMAT.md).
 
 ## Usage
 
@@ -13,12 +13,4 @@ A file-based reference library for iPhone and iPad. Each entry is a folder, name
 
 ## Building
 
-Open `RefdirApp.swiftpm` in Swift Playgrounds on an iPad (iPadOS 26 or later) and run it. It has no dependencies.
-
-## See also
-
-- [refdir](https://github.com/xiupos/refdir): the format, the `refdir` command, and the GNOME app
-
-## License
-
-[MIT](LICENSE)
+This folder is a Swift Playgrounds project. Copy or sync it to an iPad as `RefdirApp.swiftpm` (iPadOS 26 or later), then open it in Swift Playgrounds and run it. It has no dependencies.

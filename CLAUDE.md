@@ -10,9 +10,10 @@ examples in `tests/cases.json`.
 
 The name is Refdir; `refdir` is the command, the crate, and the folder names.
 
-**Other programs.** [refdir-ios](https://github.com/xiupos/refdir-ios) (`~/Syncthing/swift-playgrounds-project/RefdirApp.swiftpm`), the
-iOS app, implements the format again in Swift from this code, with a copy of `tests/cases.json`:
-a rule changed here is changed there, and the copy replaced.
+**The iOS app** is in `ios/`, with its own `CLAUDE.md`. It implements the format again in Swift
+from this code, and runs the same `tests/cases.json`: a rule changed here is changed there, or
+say that it has not caught up. `just test` runs both. Everything else here is about the crate,
+and its commands run from the top.
 
 ## Layout
 

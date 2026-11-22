@@ -3,12 +3,12 @@
 Refdir for iOS and iPadOS: a library of references as a folder of BibTeX entries. What the code
 does not say by itself: the reasons behind decisions, pitfalls, and what only the iPad can check.
 
-It implements the Refdir format of [refdir](https://github.com/xiupos/refdir) (checked out at
-`~/Projects/refdir`): `FORMAT.md`, and its code, `src/lib.rs` and `src/fetch.rs`, which is the rule
-where the format says nothing. `cases.json` here is a copy of its `tests/cases.json`: copy it again
-when it changes there. A change of the format goes into refdir first. The app does what refdir's
-GNOME app does, in the platform's way; its `CLAUDE.md` has the reasons that do not depend on the
-platform.
+It implements the Refdir format of the crate at the top of the repository (`..`): `../FORMAT.md`,
+and its code, `../src/lib.rs` and `../src/fetch.rs`, which is the rule where the format says
+nothing. Its tests run the crate's `../tests/cases.json`. A change of the format goes into the
+crate first. The app does what the crate's GNOME app (`../src/bin/refdir-gtk`) does, in the
+platform's way; `../CLAUDE.md` has the reasons that do not depend on the platform. Commands below
+run from this folder.
 
 **Keep it small enough to read.** Four source files, no subfolders. No browsing of INSPIRE (Safari
 does it), no cache of responses, no TeX typeset in a web view.
@@ -16,7 +16,9 @@ does it), no cache of responses, no TeX typeset in a web view.
 ## Environment
 
 - Swift Playgrounds on an iPad; there is no Mac and no Xcode. The project is written on Linux and
-  synced to the iPad with Syncthing.
+  synced to the iPad with Syncthing. Only this folder is synced, as `RefdirApp.swiftpm`: the
+  crate and the repository's `.git` are not on the iPad, and nothing in the app may need them.
+  `.stignore` keeps the build files of Playgrounds on the iPad.
 - `Package.swift` is as Playgrounds writes it: change it only as its app settings would, except
   for `additionalInfoPlistContentFilePath: "Info.plist"`. One target, `AppModule`, with
   `path: "."`, so every `.swift` file in the project is compiled. No packages, no extensions.
@@ -40,17 +42,15 @@ does it), no cache of responses, no TeX typeset in a web view.
 | `Sources/Fetch.swift` | The network: INSPIRE, doi.org, arXiv |
 | `Sources/App.swift` | `@main`, `Store` (the folder, its bookmark, reading it, every change to it), the places, the list, adding, exporting, Spotlight |
 | `Sources/Entry.swift` | `EntryPage`: one entry. The BibTeX editor, Quick Look |
-| `cases.json` | refdir's examples |
 
 ## Testing
 
 `Core.swift` builds on Linux (Swift 6.4 here). Its tests, at the end of the file under
-`#if os(Linux)`, run every section of `cases.json` as refdir's `tests/cases.rs` does, and what
+`#if os(Linux)`, run every section of `../tests/cases.json` as refdir's `tests/cases.rs` does, and what
 needs folders (reading, adding, writing, files) on a temporary folder.
 
 ```bash
 swiftc -parse-as-library Sources/Core.swift -o /tmp/refdir-ios-test && /tmp/refdir-ios-test
-/tmp/refdir-ios-test ~/Projects/refdir/tests/cases.json   # is the copy current?
 swiftc -parse-as-library -typecheck Sources/Core.swift Sources/Fetch.swift
 swiftc -frontend -parse Sources/App.swift Sources/Entry.swift   # syntax only
 ```
