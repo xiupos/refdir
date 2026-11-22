@@ -15,10 +15,9 @@ does it), no cache of responses, no TeX typeset in a web view.
 
 ## Environment
 
-- Swift Playgrounds on an iPad; there is no Mac and no Xcode. The project is written on Linux and
-  synced to the iPad with Syncthing. Only this folder is synced, as `RefdirApp.swiftpm`: the
-  crate and the repository's `.git` are not on the iPad, and nothing in the app may need them.
-  `.stignore` keeps the build files of Playgrounds on the iPad.
+- Swift Playgrounds on an iPad; there is no Mac and no Xcode. The project is written on Linux,
+  and this folder is copied to the iPad as it is, as `RefdirApp.swiftpm`: nothing in the app may
+  need a file outside it.
 - `Package.swift` is as Playgrounds writes it: change it only as its app settings would, except
   for `additionalInfoPlistContentFilePath: "Info.plist"`. One target, `AppModule`, with
   `path: "."`, so every `.swift` file in the project is compiled. No packages, no extensions.
@@ -31,8 +30,8 @@ does it), no cache of responses, no TeX typeset in a web view.
   lighter; for a tinted one, in grey on none, as iOS tints it), made from refdir's SVG with
   `rsvg-convert` and ImageMagick, the blue accent colour, iOS 26, Swift 5 language mode. UI
   text is in English.
-- Syncthing may leave `*.sync-conflict-*` copies of files. In `Sources/` they cause "invalid
-  redeclaration" errors: delete them first.
+- A sync may leave copies of files, such as Syncthing's `*.sync-conflict-*`. In `Sources/` they
+  cause "invalid redeclaration" errors: delete them first.
 
 ## Layout
 

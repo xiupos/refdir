@@ -28,7 +28,3 @@ Package.resolved
 .swiftpm
 
 .build/
-
-# Syncthing
-.stfolder
-.stversions/

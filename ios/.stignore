@@ -1,4 +1,0 @@
-// Swift Playgrounds and Xcode build files, which stay on the device that made them
-.build
-.swiftpm
-*.xcuserstate
