@@ -1,6 +1,6 @@
 // The Refdir format (refdir's FORMAT.md): BibTeX entries, an entry's folder, the library, adding,
 // files, names, plain text, and finding. Foundation only, no networking, so that it builds and is
-// tested on Linux: the tests are at the end, and run cases.json, refdir's examples
+// tested on Linux: the tests are at the end, and run refdir's examples, tests/cases.json
 
 import Foundation
 
@@ -1034,9 +1034,8 @@ private struct TeX {
 // MARK: - Tests
 
 // Linux only: the app never builds this. Run with
-//   swiftc -parse-as-library Sources/Core.swift -o /tmp/refdir-ios-test && /tmp/refdir-ios-test
-// It runs cases.json of this project, or the file whose path it is given, such as refdir's
-// tests/cases.json, to check that this copy is current
+//   swiftc -parse-as-library ios/Sources/Core.swift -o /tmp/refdir-ios-test && /tmp/refdir-ios-test
+// It runs tests/cases.json at the top of the repository, or the file whose path it is given
 #if os(Linux)
 @main
 enum Tests {
@@ -1053,8 +1052,7 @@ enum Tests {
 
     static func main() {
         let path = CommandLine.arguments.dropFirst().first
-            ?? URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-                .appendingPathComponent("cases.json").path
+            ?? URL(fileURLWithPath: "../../tests/cases.json", relativeTo: URL(fileURLWithPath: #filePath)).path
         let data = try! Data(contentsOf: URL(fileURLWithPath: path))
         let cases = try! JSONSerialization.jsonObject(with: data) as! [String: Any]
         func section(_ name: String) -> [Any] {
